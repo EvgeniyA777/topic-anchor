@@ -1,5 +1,17 @@
 # topic-anchor Implementation Plan
 
+## Current Status
+
+`topic-anchor` is now a working local `report-only` Clojure CLI for HTML batches.
+
+The current repo includes:
+
+- a runnable CLI entrypoint in `src/topic_anchor/core.clj`
+- HTML discovery and extraction
+- Ollama HTTP embedding calls
+- cosine similarity scoring and threshold policy
+- automated tests plus a local smoke workflow
+
 ## Goal
 
 `topic-anchor` is a small Clojure tool for flagging files in a folder that look off-topic relative to one trusted anchor file.
@@ -14,9 +26,9 @@ The tool uses embeddings, not duplicate detection. The user supplies one file th
 - Backend: Ollama over HTTP
 - First supported formats: `.html`, `.htm`
 - Default behavior: report only
-- Output: terminal ranking with `OK`, `SUSPECT`, `OUTLIER`, or `REVIEW`
+- Output: terminal ranking with `OK`, `SUSPECT`, `OUTLIER`, `REVIEW`, or `-` for non-flagged small-sample rows
 
-Planned command shape:
+Current command shape:
 
 ```bash
 clojure -M -m topic-anchor.core --anchor ./good.html --dir ./batch --model nomic-embed-text
@@ -31,7 +43,7 @@ clojure -M -m topic-anchor.core --anchor ./good.html --dir ./batch --model nomic
 - It does not support every file type in v1.
 - It does not auto-discover the topic from the whole folder in v1.
 
-## Planned Interface
+## Current Interface
 
 Required inputs:
 
@@ -46,13 +58,14 @@ Optional inputs:
 - `--include-hidden`: include hidden files and directories, default `false`
 - `--top`: number of lowest-score results to highlight, default `5`
 
-Planned behavior:
+Current behavior:
 
 - parse the anchor HTML and each candidate HTML into normalized text
 - request one embedding for the anchor and one for each candidate
 - compute cosine similarity between each candidate and the anchor
 - sort lowest score first
-- label obvious low-similarity files as review candidates
+- print a terminal report with header, highlights, full ranking, skipped files, and summary
+- return exit code `2` for input errors and `3` for Ollama/runtime failures
 
 ## Threshold Policy
 
@@ -111,9 +124,22 @@ Known risks:
 - HTML extraction quality affects the embedding signal
 - Ollama availability and model quality directly affect results
 
-## Next Build Step
+## Local Verification
 
-- Bootstrap the Clojure project in this repo
-- implement HTML extraction and Ollama HTTP embedding calls
-- add a minimal CLI entrypoint
-- add one reference ADR: [adr/0001-anchor-based-topic-screening.md](./adr/0001-anchor-based-topic-screening.md)
+Project checks:
+
+```bash
+clojure -M:test
+clojure -M -m topic-anchor.core --help
+./scripts/smoke-local.sh
+```
+
+Smoke workflow inputs:
+
+- fixtures live under `fixtures/smoke/`
+- the local smoke script calls the real CLI against that batch
+- it requires a reachable Ollama server and a loaded embedding model
+
+Reference ADR:
+
+- [adr/0001-anchor-based-topic-screening.md](./adr/0001-anchor-based-topic-screening.md)
