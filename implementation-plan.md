@@ -7,10 +7,12 @@
 The current repo includes:
 
 - a babashka-first interactive launcher in `bb.edn`
-- a cross-repo wrapper in `bin/topic-anchor-here`
+- a global cross-repo wrapper in `bin/topic-anchor`
+- a user installer task in `bb.edn`
 - a runnable CLI entrypoint in `src/topic_anchor/core.clj`
 - launcher orchestration in `src/topic_anchor/launcher.clj`
 - wrapper orchestration in `src/topic_anchor/wrapper.clj`
+- installer orchestration in `src/topic_anchor/install.clj`
 - supported file discovery for `.html`, `.htm`, and `.md`
 - extraction dispatch in `src/topic_anchor/document.clj`
 - HTML extraction in `src/topic_anchor/html.clj`
@@ -38,16 +40,25 @@ If the folder is omitted, the launcher prompts for it, canonicalizes the path fo
 For cross-repo use, the wrapper flow is:
 
 ```bash
-bin/topic-anchor-here [optional-folder]
+topic-anchor [optional-folder]
 ```
 
 When no folder is passed, the wrapper uses the current working directory as the target folder, resolves the `topic-anchor` app home, and then launches the existing `bb semantic-compare` workflow from there.
+
+The supported installation flow is:
+
+```bash
+bb install-user
+```
+
+This installs the public `topic-anchor` command into a user-level bin directory and prints PATH instructions when that directory is not already configured.
 
 ## v1 Decisions
 
 - Implementation language: Clojure
 - Launcher: Babashka task in this repo
-- Cross-repo entrypoint: Babashka wrapper script in `bin/`
+- Cross-repo entrypoint: Babashka wrapper script exposed as `topic-anchor`
+- Installation: user-level installer task with OS-aware install path selection
 - Project shape: this directory is the separate sibling project
 - Input model: one selected target file plus one target directory
 - Backend: Ollama over HTTP
@@ -64,7 +75,7 @@ bb semantic-compare ./batch
 Cross-repo wrapper shape:
 
 ```bash
-bin/topic-anchor-here ./batch
+topic-anchor ./batch
 ```
 
 Underlying CLI shape:
@@ -88,8 +99,9 @@ Primary launcher:
 
 - `bb semantic-compare`: prompt for folder, canonicalize it, list supported files, prompt for target file
 - `bb semantic-compare <folder>`: skip folder prompt and go straight to target selection
-- `bin/topic-anchor-here`: use the current working directory as the target folder and launch from the `topic-anchor` app home
-- `bin/topic-anchor-here <folder>`: use the provided folder instead of the current working directory
+- `topic-anchor`: use the current working directory as the target folder and launch from the `topic-anchor` app home
+- `topic-anchor <folder>`: use the provided folder instead of the current working directory
+- `bb install-user`: install the public `topic-anchor` command into a user-level bin directory
 
 Launcher behavior:
 
@@ -104,6 +116,14 @@ Wrapper behavior:
 - detects the current OS and relies on JVM path canonicalization so path separators and absolute path forms follow the local platform
 - resolves the app home from `TOPIC_ANCHOR_HOME` first, then from the wrapper script location
 - runs `bb semantic-compare` from the resolved app home against the canonical target folder
+
+Installer behavior:
+
+- chooses the install directory from `TOPIC_ANCHOR_BIN_DIR`, then OS defaults
+- prefers a Unix symlink and falls back to a generated wrapper when symlinks are unavailable
+- installs a Windows batch shim on Windows
+- refuses to overwrite a different existing `topic-anchor` command in `PATH`
+- prints PATH instructions but does not edit shell config automatically
 
 Required inputs:
 
@@ -192,7 +212,8 @@ Project checks:
 ```bash
 clojure -M:test
 bb semantic-compare ./fixtures/smoke
-/Users/ae/workspaces/topic-anchor/bin/topic-anchor-here ./fixtures/smoke
+bb install-user
+topic-anchor ./fixtures/smoke
 clojure -M -m topic-anchor.core --help
 ./scripts/smoke-local.sh
 ```
@@ -211,3 +232,4 @@ Reference ADR:
 - [adr/0002-add-markdown-support.md](./adr/0002-add-markdown-support.md)
 - [adr/0003-replace-anchor-centric-screening-with-pairwise-clustering.md](./adr/0003-replace-anchor-centric-screening-with-pairwise-clustering.md)
 - [adr/0004-remove-makefile-launcher-in-favor-of-babashka.md](./adr/0004-remove-makefile-launcher-in-favor-of-babashka.md)
+- [adr/0005-add-cross-repo-os-agnostic-wrapper.md](./adr/0005-add-cross-repo-os-agnostic-wrapper.md)

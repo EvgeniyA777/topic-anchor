@@ -4,6 +4,7 @@
             topic-anchor.core-integration-test
             topic-anchor.fs-test
             topic-anchor.html-test
+            topic-anchor.install-test
             topic-anchor.launcher-test
             topic-anchor.markdown-test
             topic-anchor.ollama-test
@@ -15,6 +16,7 @@
                                           'topic-anchor.core-integration-test
                                           'topic-anchor.fs-test
                                           'topic-anchor.html-test
+                                          'topic-anchor.install-test
                                           'topic-anchor.launcher-test
                                           'topic-anchor.markdown-test
                                           'topic-anchor.ollama-test

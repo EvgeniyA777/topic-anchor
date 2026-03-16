@@ -30,7 +30,7 @@
     (fn [root]
       (let [repo (io/file root "topic-anchor")
             bin (io/file repo "bin")
-            script (io/file bin "topic-anchor-here")]
+            script (io/file bin "topic-anchor")]
         (.mkdir repo)
         (.mkdir bin)
         (spit script "#!/usr/bin/env bb")
@@ -44,7 +44,7 @@
             script-home (io/file root "script-home")
             fallback-home (io/file root "fallback-home")
             script-bin (io/file script-home "bin")
-            script (io/file script-bin "topic-anchor-here")]
+            script (io/file script-bin "topic-anchor")]
         (doseq [home [env-home script-home fallback-home]]
           (.mkdir home)
           (.mkdir (io/file home "src"))
@@ -80,7 +80,7 @@
             src (io/file repo "src")
             cwd (io/file root "caller")
             bin (io/file repo "bin")
-            script (io/file bin "topic-anchor-here")]
+            script (io/file bin "topic-anchor")]
         (.mkdir repo)
         (.mkdir src)
         (.mkdir cwd)

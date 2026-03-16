@@ -62,16 +62,22 @@ The launcher keeps the clustering output unchanged. It only replaces the old ext
 
 ## Cross-Repo Wrapper
 
-Run the wrapper from the repo or folder you want to inspect:
+Install the global command:
 
 ```bash
-/Users/ae/workspaces/topic-anchor/bin/topic-anchor-here
+bb install-user
+```
+
+Then run it from the repo or folder you want to inspect:
+
+```bash
+topic-anchor
 ```
 
 Or point it at a specific folder:
 
 ```bash
-/Users/ae/workspaces/topic-anchor/bin/topic-anchor-here ./out
+topic-anchor ./out
 ```
 
 The wrapper:
@@ -81,7 +87,13 @@ The wrapper:
 - starts `bb semantic-compare` from the resolved `topic-anchor` home
 - canonicalizes target paths through JVM path APIs, so path separators and absolute path forms follow the current OS automatically
 
-If you want the wrapper on `PATH`, symlink or copy [`bin/topic-anchor-here`](/Users/ae/workspaces/topic-anchor/bin/topic-anchor-here) and keep `TOPIC_ANCHOR_HOME` available when the script is no longer inside the repo.
+`bb install-user`:
+
+- installs one public command: `topic-anchor`
+- prefers a symlink on Unix-like systems and falls back to a generated wrapper when needed
+- installs a Windows `.bat` shim on Windows
+- prints exact PATH instructions if the install directory is not already configured
+- refuses to overwrite a different existing `topic-anchor` command in `PATH`
 
 Supported launcher environment variables:
 
@@ -96,6 +108,7 @@ Supported launcher environment variables:
 - `TOPIC_ANCHOR_CLOJURE_CMD`
 - `TOPIC_ANCHOR_HOME`
 - `TOPIC_ANCHOR_BB_CMD`
+- `TOPIC_ANCHOR_BIN_DIR`
 
 ## Core CLI
 
@@ -193,7 +206,8 @@ Override the model or base URL if needed:
 ```bash
 clojure -M:test
 bb semantic-compare ./fixtures/smoke
-/Users/ae/workspaces/topic-anchor/bin/topic-anchor-here ./fixtures/smoke
+bb install-user
+topic-anchor ./fixtures/smoke
 clojure -M -m topic-anchor.core --help
 ```
 
@@ -204,6 +218,7 @@ clojure -M -m topic-anchor.core --help
 - markdown support decision: [adr/0002-add-markdown-support.md](./adr/0002-add-markdown-support.md)
 - pairwise clustering decision: [adr/0003-replace-anchor-centric-screening-with-pairwise-clustering.md](./adr/0003-replace-anchor-centric-screening-with-pairwise-clustering.md)
 - launcher decision: [adr/0004-remove-makefile-launcher-in-favor-of-babashka.md](./adr/0004-remove-makefile-launcher-in-favor-of-babashka.md)
+- cross-repo wrapper decision: [adr/0005-add-cross-repo-os-agnostic-wrapper.md](./adr/0005-add-cross-repo-os-agnostic-wrapper.md)
 
 ## License
 

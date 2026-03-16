@@ -3,4 +3,8 @@
  {semantic-compare
   {:doc "Interactively select a folder and target file, then run semantic clustering"
    :requires ([topic-anchor.launcher :as launcher])
-   :task (launcher/run-launcher! *command-line-args*)}}}
+   :task (launcher/run-launcher! *command-line-args*)}
+  install-user
+  {:doc "Install the global topic-anchor command into a user-level bin directory"
+   :requires ([topic-anchor.install :as install])
+   :task (install/install-user!)}}}

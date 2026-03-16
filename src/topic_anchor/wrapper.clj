@@ -106,7 +106,7 @@
          process (.start process-builder)
          exit-code (.waitFor process)]
      (when-not (zero? exit-code)
-       (throw (ex-info (str "topic-anchor-here failed with exit code " exit-code)
+       (throw (ex-info (str "topic-anchor failed with exit code " exit-code)
                        {:kind :runtime :exit-code exit-code})))
      exit-code)))
 
