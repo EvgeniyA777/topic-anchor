@@ -18,8 +18,8 @@
 (deftest validate-cli-accepts-existing-inputs
   (with-temp-dir
     (fn [root]
-      (let [anchor (io/file root "anchor.html")]
-        (spit anchor "<html><body>anchor</body></html>")
+      (let [anchor (io/file root "anchor.md")]
+        (spit anchor "# anchor")
         (let [{:keys [ok? options]} (core/validate-cli {:options {:anchor (.getPath anchor)
                                                                    :dir (.getPath root)
                                                                    :model "nomic-embed-text"}
@@ -82,6 +82,36 @@
               (is (some #{"-\t0.9798\tgood.html"} (:lines result)))
               (is (some #{"Skipped"} (:lines result)))
               (is (some #{"EMPTY_TEXT\tempty.html"} (:lines result))))))))))
+
+(deftest run-command-supports-markdown-anchor-and-candidates
+  (with-temp-dir
+    (fn [root]
+      (let [anchor (io/file root "anchor.md")
+            near (io/file root "near.md")
+            far (io/file root "far.md")]
+        (spit anchor "# Anchor topic")
+        (spit near "## Related topic")
+        (spit far "## Unrelated topic")
+        (test-support/with-http-server
+          {:embed (fn [exchange]
+                    (let [body (slurp (.getRequestBody exchange))]
+                      (cond
+                        (.contains body "\"Anchor topic\"") (test-support/write-json! exchange 200 {:embeddings [[1.0 0.0]]})
+                        (.contains body "\"Related topic\"") (test-support/write-json! exchange 200 {:embeddings [[0.95 0.31]]})
+                        :else (test-support/write-json! exchange 200 {:embeddings [[0.2 0.98]]}))))
+           :tags (fn [exchange]
+                   (test-support/write-json! exchange 200 {:models [{:name "demo-model"}]}))}
+          (fn [{:keys [base-url]}]
+            (let [result (core/run-command {:anchor (.getPath anchor)
+                                            :dir (.getPath root)
+                                            :model "demo-model"
+                                            :base-url base-url
+                                            :recursive true
+                                            :include-hidden false
+                                            :top 2})]
+              (is (:ok? result))
+              (is (some #{"REVIEW\t0.2000\tfar.md"} (:lines result)))
+              (is (some #{"-\t0.9507\tnear.md"} (:lines result))))))))))
 
 (deftest run-command-classifies-large-batches
   (with-temp-dir

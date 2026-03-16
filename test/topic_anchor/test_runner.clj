@@ -4,6 +4,7 @@
             topic-anchor.core-integration-test
             topic-anchor.fs-test
             topic-anchor.html-test
+            topic-anchor.markdown-test
             topic-anchor.ollama-test
             topic-anchor.scoring-test))
 
@@ -12,6 +13,7 @@
                                           'topic-anchor.core-integration-test
                                           'topic-anchor.fs-test
                                           'topic-anchor.html-test
+                                          'topic-anchor.markdown-test
                                           'topic-anchor.ollama-test
                                           'topic-anchor.scoring-test)]
     (System/exit (if (zero? (+ fail error)) 0 1))))

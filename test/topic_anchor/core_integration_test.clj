@@ -22,6 +22,11 @@
     (spit file (str "<html><body>" body "</body></html>"))
     file))
 
+(defn write-md! [root name body]
+  (let [file (io/file root name)]
+    (spit file body)
+    file))
+
 (defn embedding-for-score [score]
   [score (Math/sqrt (double (max 0.0 (- 1.0 (* score score)))) )])
 
@@ -65,7 +70,7 @@
         (is (:ok? result))
         (is (= 0 (:exit-code result)))
         (is (.contains (str/join "\n" (:lines result)) "Mode: small-sample"))
-        (is (.contains (str/join "\n" (:lines result)) "HTML candidates: 3"))
+        (is (.contains (str/join "\n" (:lines result)) "Supported candidates: 3"))
         (is (.contains (str/join "\n" (:lines result)) "Comparable: 2"))
         (is (.contains (str/join "\n" (:lines result)) "Skipped: 1"))
         (is (.contains (str/join "\n" (:lines result)) "REVIEW\t0.0000\tother.html"))
@@ -138,8 +143,30 @@
                     (embedding-handler {"anchor topic" [1.0 0.0]}))]
         (is (false? (:ok? result)))
         (is (= 2 (:exit-code result)))
-        (is (= "No comparable HTML files were found after filtering and extraction"
+        (is (= "No comparable .html, .htm, or .md files were found after filtering and extraction"
                (:message result)))))))
+
+(deftest run-command-supports-markdown-batches
+  (with-temp-dir
+    (fn [root]
+      (let [anchor (write-md! root "anchor.md" "# anchor topic")
+            near (write-md! root "near.md" "## related topic")
+            other (write-md! root "other.md" "## other topic")
+            options {:anchor (.getPath anchor)
+                     :dir (.getPath root)
+                     :model "demo"
+                     :recursive true
+                     :include-hidden false
+                     :top 5}
+            result (run-with-server
+                    options
+                    (embedding-handler {"anchor topic" [1.0 0.0]
+                                        "related topic" (embedding-for-score 0.97)
+                                        "other topic" (embedding-for-score 0.10)}))
+            text (str/join "\n" (:lines result))]
+        (is (:ok? result))
+        (is (.contains text "REVIEW\t0.1000\tother.md"))
+        (is (.contains text "-\t0.9700\tnear.md"))))))
 
 (deftest run-command-fails-for-http-and-malformed-ollama-responses
   (with-temp-dir

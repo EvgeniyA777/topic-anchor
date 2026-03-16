@@ -29,22 +29,23 @@
         (spit anchor "<html><body>anchor</body></html>")
         (spit a-file "<html><body>b</body></html>")
         (spit z-file "<html><body>a</body></html>")
+        (spit (io/file root "note.md") "# markdown note")
         (spit hidden-file "<html><body>hidden</body></html>")
         (spit txt-file "ignore")
-        (testing "recursive discovery excludes anchor, hidden files, and non-html"
-          (is (= ["b.html" "nested/a.htm"]
+        (testing "recursive discovery excludes anchor, hidden files, and unsupported files"
+          (is (= ["b.html" "nested/a.htm" "note.md"]
                  (mapv #(fs/relative-display-path root %)
                        (fs/candidate-paths root {:recursive true
                                                  :include-hidden false
                                                  :anchor anchor})))))
         (testing "non-recursive discovery stays at the root"
-          (is (= ["b.html"]
+          (is (= ["b.html" "note.md"]
                  (mapv #(fs/relative-display-path root %)
                        (fs/candidate-paths root {:recursive false
                                                  :include-hidden false
                                                  :anchor anchor})))))
         (testing "include-hidden exposes dot-directories"
-          (is (= [".hidden/secret.html" "b.html" "nested/a.htm"]
+          (is (= [".hidden/secret.html" "b.html" "nested/a.htm" "note.md"]
                  (mapv #(fs/relative-display-path root %)
                        (fs/candidate-paths root {:recursive true
                                                  :include-hidden true

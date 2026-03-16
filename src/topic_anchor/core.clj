@@ -3,13 +3,13 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.tools.cli :refer [parse-opts]]
+            [topic-anchor.document :as document]
             [topic-anchor.fs :as fs]
-            [topic-anchor.html :as html]
             [topic-anchor.ollama :as ollama]
             [topic-anchor.scoring :as scoring]))
 
 (def cli-options
-  [["-a" "--anchor PATH" "Path to one known-good in-topic HTML file"]
+  [["-a" "--anchor PATH" "Path to one known-good in-topic HTML or Markdown file"]
    ["-d" "--dir PATH" "Directory to scan"]
    ["-m" "--model MODEL" "Ollama embedding model name"]
    ["-b" "--base-url URL" "Ollama base URL" :default "http://127.0.0.1:11434"]
@@ -31,7 +31,7 @@
    \newline
    ["topic-anchor"
     ""
-    "Semantic topic screening for HTML folders using one trusted anchor file."
+    "Semantic topic screening for HTML and Markdown folders using one trusted anchor file."
     ""
     "Usage:"
     "  clojure -M -m topic-anchor.core --anchor ./good.html --dir ./batch --model nomic-embed-text"
@@ -78,8 +78,8 @@
       (when-not (blank-option? anchor)
         (when-not (existing-file? anchor)
           (conj! errors (str "Anchor file does not exist: " anchor)))
-        (when-not (fs/html-path? anchor)
-          (conj! errors (str "Anchor file must be .html or .htm: " anchor)))))
+        (when-not (fs/supported-path? anchor)
+          (conj! errors (str "Anchor file must be .html, .htm, or .md: " anchor)))))
     (when-let [dir (:dir options)]
       (when-not (blank-option? dir)
         (when-not (existing-directory? dir)
@@ -117,7 +117,7 @@
      (reduce
       (fn [{:keys [comparable skipped]} path]
         (let [relative-path (fs/relative-display-path (:dir options) path)
-              result (html/extract-text path)]
+              result (document/extract-text path)]
           (if (:ok? result)
             {:comparable (conj comparable {:path path
                                            :relative-path relative-path
@@ -206,7 +206,7 @@
        (str "Model: " (:model options))
        (str "Mode: " sample-mode)
        ""
-       (format "HTML candidates: %d" total-html)
+       (format "Supported candidates: %d" total-html)
        (format "Comparable: %d" (count classified))
        (format "Skipped: %d" (count skipped))
        ""
@@ -248,7 +248,7 @@
            :results (vec (sort-by :score acc))})))))
 
 (defn run-command [options]
-  (let [anchor-result (html/extract-text (:anchor options))]
+  (let [anchor-result (document/extract-text (:anchor options))]
     (cond
       (not (:ok? anchor-result))
       (input-error
@@ -259,7 +259,7 @@
       :else
       (let [{:keys [comparable skipped total-html]} (prepare-candidates options)]
         (if (empty? comparable)
-          (input-error "No comparable HTML files were found after filtering and extraction")
+          (input-error "No comparable .html, .htm, or .md files were found after filtering and extraction")
           (let [model-check (ensure-model-available options)]
             (if-not (:ok? model-check)
               model-check

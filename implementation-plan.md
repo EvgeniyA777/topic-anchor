@@ -2,12 +2,15 @@
 
 ## Current Status
 
-`topic-anchor` is now a working local `report-only` Clojure CLI for HTML batches.
+`topic-anchor` is now a working local `report-only` Clojure CLI for HTML and Markdown batches.
 
 The current repo includes:
 
 - a runnable CLI entrypoint in `src/topic_anchor/core.clj`
-- HTML discovery and extraction
+- supported file discovery for `.html`, `.htm`, and `.md`
+- extraction dispatch in `src/topic_anchor/document.clj`
+- HTML extraction in `src/topic_anchor/html.clj`
+- Markdown extraction in `src/topic_anchor/markdown.clj`
 - Ollama HTTP embedding calls
 - cosine similarity scoring and threshold policy
 - automated tests plus a local smoke workflow
@@ -24,7 +27,7 @@ The tool uses embeddings, not duplicate detection. The user supplies one file th
 - Project shape: this directory is the separate sibling project
 - Input model: one trusted anchor file plus one target directory
 - Backend: Ollama over HTTP
-- First supported formats: `.html`, `.htm`
+- Supported formats in v1: `.html`, `.htm`, `.md`
 - Default behavior: report only
 - Output: terminal ranking with `OK`, `SUSPECT`, `OUTLIER`, `REVIEW`, or `-` for non-flagged small-sample rows
 
@@ -47,7 +50,7 @@ clojure -M -m topic-anchor.core --anchor ./good.html --dir ./batch --model nomic
 
 Required inputs:
 
-- `--anchor`: path to one known-good in-topic HTML file
+- `--anchor`: path to one known-good in-topic HTML or Markdown file
 - `--dir`: directory to scan
 - `--model`: Ollama embedding model name
 
@@ -60,12 +63,14 @@ Optional inputs:
 
 Current behavior:
 
-- parse the anchor HTML and each candidate HTML into normalized text
+- parse the anchor file and each candidate file into normalized text
 - request one embedding for the anchor and one for each candidate
 - compute cosine similarity between each candidate and the anchor
 - sort lowest score first
 - print a terminal report with header, highlights, full ranking, skipped files, and summary
 - return exit code `2` for input errors and `3` for Ollama/runtime failures
+- perform a live Ollama preflight against `/api/tags` before embedding calls
+- fail fast with a pull hint if the requested embedding model is not installed
 
 ## Threshold Policy
 
@@ -76,9 +81,9 @@ Similarity score:
 
 Status rules:
 
-- if fewer than 6 comparable HTML files are scored, do not emit hard `OK`, `SUSPECT`, or `OUTLIER`
+- if fewer than 6 comparable HTML or Markdown files are scored, do not emit hard `OK`, `SUSPECT`, or `OUTLIER`
 - for these small sets, rank all files by score and mark only the single lowest-scoring file as `REVIEW`
-- if 6 or more comparable HTML files are scored, compute:
+- if 6 or more comparable HTML or Markdown files are scored, compute:
   - `median-score = median(all similarity scores)`
   - `mad = median(abs(score - median-score))`
   - `mad-floor = max(mad, 0.02)`
@@ -121,7 +126,7 @@ What the user must not infer:
 Known risks:
 
 - tiny file sets are harder to classify confidently
-- HTML extraction quality affects the embedding signal
+- extraction quality affects the embedding signal
 - Ollama availability and model quality directly affect results
 
 ## Local Verification
@@ -139,7 +144,10 @@ Smoke workflow inputs:
 - fixtures live under `fixtures/smoke/`
 - the local smoke script calls the real CLI against that batch
 - it requires a reachable Ollama server and a loaded embedding model
+- the smoke script checks `/api/tags` before running the CLI
+- `nomic-embed-text` and `nomic-embed-text:latest` are treated as the same installed model name during the preflight check
 
 Reference ADR:
 
 - [adr/0001-anchor-based-topic-screening.md](./adr/0001-anchor-based-topic-screening.md)
+- [adr/0002-add-markdown-support.md](./adr/0002-add-markdown-support.md)

@@ -1,12 +1,12 @@
 # topic-anchor
 
-`topic-anchor` is a small Clojure CLI for finding files in a folder that look off-topic relative to one trusted anchor HTML file.
+`topic-anchor` is a small Clojure CLI for finding files in a folder that look off-topic relative to one trusted anchor HTML or Markdown file.
 
 Status: v1 local CLI is implemented.
 
 ## What It Does
 
-- scans a directory of `.html` and `.htm` files
+- scans a directory of `.html`, `.htm`, and `.md` files
 - extracts normalized text from each candidate
 - embeds the anchor and candidates through Ollama over HTTP
 - ranks candidates by cosine similarity to the anchor
@@ -17,7 +17,7 @@ Status: v1 local CLI is implemented.
 - it is not duplicate detection
 - it does not prove correctness or truth
 - it does not move, delete, or rewrite files
-- it does not support non-HTML formats in v1
+- it does not support formats beyond HTML and Markdown in v1
 
 ## Prerequisites
 
@@ -44,7 +44,7 @@ clojure -M -m topic-anchor.core \
 
 Supported options:
 
-- `--anchor`: path to one known-good in-topic HTML file
+- `--anchor`: path to one known-good in-topic HTML or Markdown file
 - `--dir`: directory to scan
 - `--model`: Ollama embedding model name
 - `--base-url`: Ollama base URL, default `http://127.0.0.1:11434`
@@ -60,8 +60,8 @@ Exit codes:
 
 ## Decision Rule
 
-- if fewer than 6 comparable HTML files are scored, only the single lowest-scoring file is marked `REVIEW`
-- if 6 or more comparable HTML files are scored:
+- if fewer than 6 comparable HTML or Markdown files are scored, only the single lowest-scoring file is marked `REVIEW`
+- if 6 or more comparable HTML or Markdown files are scored:
   - compute the batch median similarity score
   - compute the median absolute deviation with a floor of `0.02`
   - mark `OUTLIER` if `score < median - 3 * mad-floor`
@@ -120,3 +120,8 @@ clojure -M -m topic-anchor.core --help
 
 - implementation plan: [implementation-plan.md](./implementation-plan.md)
 - architectural decision: [adr/0001-anchor-based-topic-screening.md](./adr/0001-anchor-based-topic-screening.md)
+- markdown support decision: [adr/0002-add-markdown-support.md](./adr/0002-add-markdown-support.md)
+
+## License
+
+Apache License 2.0. See [LICENSE](./LICENSE).
