@@ -1,6 +1,7 @@
 (ns topic-anchor.core-test
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
+            [clojure.tools.cli :refer [parse-opts]]
             [topic-anchor.core :as core]
             [topic-anchor.test-support :as test-support]))
 
@@ -27,6 +28,17 @@
           (is ok?)
           (is (= (.getPath anchor) (:anchor options)))
           (is (= "nomic-embed-text" (:model options))))))))
+
+(deftest parse-opts-defaults-recursive-to-false
+  (with-temp-dir
+    (fn [root]
+      (let [anchor (io/file root "anchor.md")]
+        (spit anchor "# anchor")
+        (let [{:keys [options]} (parse-opts ["--anchor" (.getPath anchor)
+                                             "--dir" (.getPath root)
+                                             "--model" "nomic-embed-text"]
+                                            core/cli-options)]
+          (is (false? (:recursive options))))))))
 
 (deftest validate-cli-rejects-missing-required-inputs
   (let [{:keys [ok? message]} (core/validate-cli {:options {}
@@ -91,6 +103,7 @@
                                             :include-hidden false
                                             :top 2})]
               (is (:ok? result))
+              (is (some #(re-matches #"Processing time: \d+ ms" %) (:lines result)))
               (is (some #{"Target verdict: IN_CLUSTER"} (:lines result)))
               (is (some #{"1\t2\t0.9798\tTARGET"} (:lines result)))
               (is (some #{"1\t-\t0.8638\t0.9798\t1\tgood.html"} (:lines result)))

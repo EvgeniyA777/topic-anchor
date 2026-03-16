@@ -27,7 +27,7 @@
     :parse-fn #(Integer/parseInt %)]
    ["-b" "--base-url URL" "Ollama base URL" :default "http://127.0.0.1:11434"]
    [nil "--recursive BOOLEAN" "Recurse into subdirectories"
-    :default true
+    :default false
     :parse-fn #(Boolean/parseBoolean %)]
    [nil "--include-hidden BOOLEAN" "Include hidden files and directories"
     :default false
@@ -382,7 +382,10 @@
           strong-neighbor-count
           (:relative-path document)))
 
-(defn report-lines [options analysis skipped total-html]
+(defn elapsed-millis [start-nanos]
+  (long (/ (- (System/nanoTime) start-nanos) 1000000)))
+
+(defn report-lines [options analysis skipped total-html elapsed-ms]
   (let [{:keys [clusters threshold target-cluster target-member target-verdict documents]} analysis]
     (vec
      (concat
@@ -390,6 +393,7 @@
        (str "Directory: " (:dir options))
        (str "Model: " (:model options))
        (format "Cluster threshold: %.4f" (double threshold))
+       (format "Processing time: %d ms" elapsed-ms)
        ""
        (format "Supported candidates: %d" total-html)
        (format "Comparable: %d" (dec (count documents)))
@@ -418,7 +422,8 @@
       (map format-skipped-row skipped)))))
 
 (defn run-command [options]
-  (let [anchor-result (document/extract-text (:anchor options))]
+  (let [start-nanos (System/nanoTime)
+        anchor-result (document/extract-text (:anchor options))]
     (cond
       (not (:ok? anchor-result))
       (input-error
@@ -442,7 +447,8 @@
                    :lines (report-lines options
                                         (analyze-documents options (:documents embedded))
                                         skipped
-                                        total-html)})))))))))
+                                        total-html
+                                        (elapsed-millis start-nanos))})))))))))
 
 (defn -main [& args]
   (let [{:keys [options summary errors]} (parse-opts args cli-options)

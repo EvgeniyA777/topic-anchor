@@ -68,10 +68,23 @@
       (let [nested (io/file root "nested")]
         (.mkdir nested)
         (is (= (.getCanonicalPath nested)
-               (wrapper/resolve-target-directory [] (.getPath nested))))
+               (wrapper/resolve-target-directory {:dir nil :recursive false}
+                                                 (.getPath nested))))
         (is (= (.getCanonicalPath nested)
-               (wrapper/resolve-target-directory [(str (io/file nested "."))]
+               (wrapper/resolve-target-directory {:dir (str (io/file nested "."))
+                                                 :recursive false}
                                                  (.getPath root))))))))
+
+(deftest parse-launch-args-supports-recursive-flag-and-one-directory
+  (is (= {:dir nil :recursive false}
+         (wrapper/parse-launch-args [])))
+  (is (= {:dir "./out" :recursive false}
+         (wrapper/parse-launch-args ["./out"])))
+  (is (= {:dir "./out" :recursive true}
+         (wrapper/parse-launch-args ["--recursive" "./out"])))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"Unknown wrapper option"
+                        (wrapper/parse-launch-args ["--wat"]))))
 
 (deftest build-launch-request-uses-canonical-paths-and-bb-command
   (with-temp-dir
@@ -93,6 +106,13 @@
                   :target-dir (.getCanonicalPath cwd)
                   :command ["bb-test" "semantic-compare" (.getCanonicalPath cwd)]}
                  (wrapper/build-launch-request []
+                                               {:cwd (.getPath cwd)
+                                                :script-path (.getPath script)})))
+          (is (= {:os (wrapper/os-family)
+                  :app-home (.getCanonicalPath repo)
+                  :target-dir (.getCanonicalPath cwd)
+                  :command ["bb-test" "semantic-compare" "--recursive" (.getCanonicalPath cwd)]}
+                 (wrapper/build-launch-request ["--recursive"]
                                                {:cwd (.getPath cwd)
                                                 :script-path (.getPath script)}))))))))
 

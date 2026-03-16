@@ -50,6 +50,12 @@ Or pass the folder up front:
 bb semantic-compare ./fixtures/smoke
 ```
 
+To recurse into nested folders explicitly:
+
+```bash
+bb semantic-compare --recursive ./fixtures/smoke
+```
+
 The launcher:
 
 - asks for the target folder if none was passed
@@ -79,6 +85,12 @@ Or point it at a specific folder:
 
 ```bash
 topic-anchor ./out
+```
+
+To recurse into nested folders explicitly:
+
+```bash
+topic-anchor --recursive ./out
 ```
 
 The wrapper:
@@ -130,7 +142,7 @@ Supported options:
 - `--chunk-size`: characters per embedding chunk, default `1800`
 - `--chunk-overlap`: characters of overlap between chunks, default `200`
 - `--base-url`: Ollama base URL, default `http://127.0.0.1:11434`
-- `--recursive`: recurse into subdirectories, default `true`
+- `--recursive`: recurse into subdirectories, default `false`
 - `--include-hidden`: include hidden files and directories, default `false`
 - `--top`: legacy option retained for compatibility; current cluster reporting does not use it
 

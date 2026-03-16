@@ -16,7 +16,6 @@
    {:env "TOPIC_ANCHOR_CHUNK_OVERLAP" :default (str default-chunk-overlap) :flag "--chunk-overlap"}
    {:env "TOPIC_ANCHOR_CLUSTER_THRESHOLD" :flag "--cluster-threshold"}
    {:env "TOPIC_ANCHOR_BASE_URL" :flag "--base-url"}
-   {:env "TOPIC_ANCHOR_RECURSIVE" :flag "--recursive"}
    {:env "TOPIC_ANCHOR_INCLUDE_HIDDEN" :flag "--include-hidden"}])
 
 (defn trim-to-nil [value]
@@ -39,9 +38,37 @@
                         {:kind :input :path display-path})))
       (str (fs/canonical-path candidate)))))
 
-(defn selectable-targets [dir]
+(defn parse-launch-args [args]
+  (loop [remaining args
+         parsed {:dir nil :recursive false}]
+    (if-let [arg (first remaining)]
+      (cond
+        (= "--recursive" arg)
+        (recur (next remaining) (assoc parsed :recursive true))
+
+        (str/starts-with? arg "-")
+        (throw (ex-info (str "Unknown launcher option: " arg)
+                        {:kind :input :option arg}))
+
+        (:dir parsed)
+        (throw (ex-info (str "Only one folder path is supported, got extra argument: " arg)
+                        {:kind :input :argument arg}))
+
+        :else
+        (recur (next remaining) (assoc parsed :dir arg)))
+      parsed)))
+
+(defn recursive-enabled? [{:keys [recursive]}]
+  (or recursive
+      (Boolean/parseBoolean (or (trim-to-nil (System/getenv "TOPIC_ANCHOR_RECURSIVE"))
+                                "false"))))
+
+(defn selectable-targets
+  ([dir]
+   (selectable-targets dir false))
+  ([dir recursive?]
   (let [root (canonicalize-directory dir)
-        candidates (fs/candidate-paths root {:recursive true
+        candidates (fs/candidate-paths root {:recursive recursive?
                                              :include-hidden false
                                              :anchor nil})
         entries (->> candidates
@@ -52,7 +79,7 @@
     (when (empty? entries)
       (throw (ex-info (str "No supported .html, .htm, or .md files found in " root)
                       {:kind :input :path root})))
-    entries))
+    entries)))
 
 (defn selection->entry [entries selection]
   (let [trimmed (trim-to-nil selection)]
@@ -94,19 +121,23 @@
   (or (trim-to-nil (System/getenv "TOPIC_ANCHOR_CLOJURE_CMD"))
       "clojure"))
 
-(defn command-args [dir target-path]
-  (into [(clojure-command)
-         "-M"
-         "-m"
-         "topic-anchor.core"
-         "--anchor"
-         target-path
-         "--dir"
-         dir]
-        (mapcat (fn [{:keys [flag] :as spec}]
-                  (when-let [value (env-value spec)]
-                    [flag value]))
-                command-option-specs)))
+(defn command-args [dir target-path recursive?]
+  (vec
+   (concat
+    [(clojure-command)
+     "-M"
+     "-m"
+     "topic-anchor.core"
+     "--anchor"
+     target-path
+     "--dir"
+     dir]
+    (when recursive?
+      ["--recursive" "true"])
+    (mapcat (fn [{:keys [flag] :as spec}]
+              (when-let [value (env-value spec)]
+                [flag value]))
+            command-option-specs))))
 
 (defn prompt! [message]
   (print message)
@@ -121,8 +152,8 @@
 (defn report-path [dir]
   (str (io/file dir default-report-name)))
 
-(defn run-core-command! [dir target-path]
-  (let [process-builder (doto (ProcessBuilder. ^java.util.List (command-args dir target-path))
+(defn run-core-command! [dir target-path recursive?]
+  (let [process-builder (doto (ProcessBuilder. ^java.util.List (command-args dir target-path recursive?))
                           (.directory (io/file (System/getProperty "user.dir")))
                           (.redirectErrorStream true))
         process (.start process-builder)
@@ -136,9 +167,9 @@
     (println (str "Report saved: " report-file))
     exit-code))
 
-(defn choose-directory [args]
+(defn choose-directory [{:keys [dir]}]
   (canonicalize-directory
-   (or (first args)
+   (or dir
        (prompt! "Paste folder path to compare: "))))
 
 (defn choose-target [entries]
@@ -148,13 +179,15 @@
 
 (defn run-launcher! [args]
   (try
-    (let [dir (choose-directory args)
-          entries (selectable-targets dir)]
+    (let [launch-options (parse-launch-args args)
+          dir (choose-directory launch-options)
+          recursive? (recursive-enabled? launch-options)
+          entries (selectable-targets dir recursive?)]
       (print-targets! dir entries)
       (let [{:keys [path relative-path]} (choose-target entries)
             exit-code (do
                         (println (str "Target: " relative-path))
-                        (run-core-command! dir path))]
+                        (run-core-command! dir path recursive?))]
         (when-not (zero? exit-code)
           (throw (ex-info (str "semantic-compare failed with exit code " exit-code)
                           {:kind :runtime :exit-code exit-code})))))

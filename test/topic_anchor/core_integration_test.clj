@@ -70,6 +70,7 @@
         (is (:ok? result))
         (is (= 0 (:exit-code result)))
         (is (.contains (str/join "\n" (:lines result)) "Target verdict: IN_CLUSTER"))
+        (is (some #(re-matches #"Processing time: \d+ ms" %) (:lines result)))
         (is (.contains (str/join "\n" (:lines result)) "Supported candidates: 3"))
         (is (.contains (str/join "\n" (:lines result)) "Comparable: 2"))
         (is (.contains (str/join "\n" (:lines result)) "Skipped: 1"))

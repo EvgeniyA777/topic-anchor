@@ -30,7 +30,18 @@
                                 (spit (io/file root "note.md") "# note")
                                 (launcher/canonicalize-directory (str (io/file root "note.md"))))))))))
 
-(deftest selectable-targets-discovers-supported-files-recursively
+(deftest parse-launch-args-supports-recursive-flag-and-one-directory
+  (is (= {:dir nil :recursive false}
+         (launcher/parse-launch-args [])))
+  (is (= {:dir "./out" :recursive false}
+         (launcher/parse-launch-args ["./out"])))
+  (is (= {:dir "./out" :recursive true}
+         (launcher/parse-launch-args ["--recursive" "./out"])))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"Unknown launcher option"
+                        (launcher/parse-launch-args ["--wat"]))))
+
+(deftest selectable-targets-defaults-to-current-directory-only
   (with-temp-dir
     (fn [root]
       (let [nested (io/file root "nested")
@@ -41,8 +52,21 @@
         (spit (io/file nested "beta.html") "<html><body>beta</body></html>")
         (spit (io/file hidden "secret.md") "# hidden")
         (spit (io/file root "skip.txt") "skip")
-        (is (= ["alpha.md" "nested/beta.html"]
+        (is (= ["alpha.md"]
                (mapv :relative-path (launcher/selectable-targets (.getPath root)))))))))
+
+(deftest selectable-targets-recurses-when-explicitly-enabled
+  (with-temp-dir
+    (fn [root]
+      (let [nested (io/file root "nested")
+            hidden (io/file root ".hidden")]
+        (.mkdir nested)
+        (.mkdir hidden)
+        (spit (io/file root "alpha.md") "# alpha")
+        (spit (io/file nested "beta.html") "<html><body>beta</body></html>")
+        (spit (io/file hidden "secret.md") "# hidden")
+        (is (= ["alpha.md" "nested/beta.html"]
+               (mapv :relative-path (launcher/selectable-targets (.getPath root) true))))))))
 
 (deftest selection->entry-supports-index-relative-name-and-absolute-path
   (with-temp-dir
@@ -53,7 +77,7 @@
         (.mkdir nested)
         (spit alpha "# alpha")
         (spit beta "# beta")
-        (let [entries (launcher/selectable-targets (.getPath root))]
+        (let [entries (launcher/selectable-targets (.getPath root) true)]
           (testing "numeric selection"
             (is (= "alpha.md"
                    (:relative-path (launcher/selection->entry entries "1")))))
@@ -97,4 +121,25 @@
           "1800"
           "--chunk-overlap"
           "200"]
-         (launcher/command-args "/tmp/root" "/tmp/root/alpha.md"))))
+         (launcher/command-args "/tmp/root" "/tmp/root/alpha.md" false))))
+
+(deftest command-args-include-recursive-flag-when-enabled
+  (is (= ["clojure"
+          "-M"
+          "-m"
+          "topic-anchor.core"
+          "--anchor"
+          "/tmp/root/alpha.md"
+          "--dir"
+          "/tmp/root"
+          "--recursive"
+          "true"
+          "--model"
+          "nomic-embed-text"
+          "--top"
+          "5"
+          "--chunk-size"
+          "1800"
+          "--chunk-overlap"
+          "200"]
+         (launcher/command-args "/tmp/root" "/tmp/root/alpha.md" true))))

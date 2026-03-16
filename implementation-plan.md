@@ -139,7 +139,7 @@ Optional inputs:
 - `--chunk-size`: characters per embedding chunk, default `1800`
 - `--chunk-overlap`: characters of overlap between chunks, default `200`
 - `--base-url`: Ollama base URL, default `http://127.0.0.1:11434`
-- `--recursive`: recurse into subdirectories, default `true`
+- `--recursive`: recurse into subdirectories, default `false`
 - `--include-hidden`: include hidden files and directories, default `false`
 - `--top`: retained for compatibility; current cluster reporting does not use it
 
@@ -206,6 +206,54 @@ Known risks:
 - threshold choice changes cluster shape materially
 - extraction quality affects the embedding signal
 - Ollama availability and model quality directly affect results
+
+## Proposed Next Improvement
+
+### Live Terminal Progress And Human-Readable Timing
+
+Problem:
+
+- the current launcher buffers child-process output until the semantic run is finished
+- during long embedding or clustering work, the operator can mistake the process for a hang
+- the report currently stores elapsed time in raw milliseconds and should present a friendlier human-facing duration
+
+Proposal:
+
+- stream progress updates live in the terminal while the semantic run is executing
+- keep the final semantic report as the canonical artifact written to `topic-anchor-semantic-report.txt`
+- keep raw elapsed time in milliseconds as the machine-oriented value
+- render a separate human-oriented duration string in the report
+
+Operator-facing behavior:
+
+- print stage-based live status to `stderr` so the user can see forward progress without polluting the final report
+- use explicit stage labels such as `scan`, `extract`, `embed`, and `cluster`
+- for stages with a known total, print `current/total` progress
+- for stages without a known total, show a simple spinner or heartbeat line
+
+Timing behavior:
+
+- preserve the raw measurement as `<n> ms`
+- display elapsed time to the user in the highest available unit and continue downward
+- examples:
+  - `858 ms` -> `858 ms`
+  - `13858 ms` -> `13 s 858 ms`
+  - `62003 ms` -> `1 min 2 s 3 ms`
+  - `3723004 ms` -> `1 h 2 min 3 s 4 ms`
+
+Implementation notes:
+
+- remove launcher-side buffering that currently hides child progress until process exit
+- stream child `stdout` and `stderr` separately instead of merging them into one buffered blob
+- keep live progress on `stderr`
+- keep the final report on `stdout`
+- store elapsed time as a numeric millisecond value in the run result and format it only at the report boundary
+
+Acceptance criteria:
+
+- a long-running semantic run visibly updates the terminal before completion
+- the saved report remains readable and free of spinner/progress noise
+- the report shows a human-readable duration and can optionally retain the raw `<n> ms` value alongside it
 
 ## Local Verification
 

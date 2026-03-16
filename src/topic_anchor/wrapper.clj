@@ -72,9 +72,29 @@
                  :candidates candidates
                  :os (os-family)})))))
 
-(defn resolve-target-directory [args cwd]
+(defn parse-launch-args [args]
+  (loop [remaining args
+         parsed {:dir nil :recursive false}]
+    (if-let [arg (first remaining)]
+      (cond
+        (= "--recursive" arg)
+        (recur (next remaining) (assoc parsed :recursive true))
+
+        (str/starts-with? arg "-")
+        (throw (ex-info (str "Unknown wrapper option: " arg)
+                        {:kind :input :option arg}))
+
+        (:dir parsed)
+        (throw (ex-info (str "Only one folder path is supported, got extra argument: " arg)
+                        {:kind :input :argument arg}))
+
+        :else
+        (recur (next remaining) (assoc parsed :dir arg)))
+      parsed)))
+
+(defn resolve-target-directory [{:keys [dir]} cwd]
   (canonical-directory
-   (or (first args)
+   (or dir
        cwd)))
 
 (defn bb-command []
@@ -86,14 +106,17 @@
          :or {cwd (System/getProperty "user.dir")
               env-home (System/getenv "TOPIC_ANCHOR_HOME")
               script-path (System/getProperty "babashka.file")}}]
-  (let [app-home (resolve-app-home {:env-home env-home
+  (let [{:keys [recursive] :as launch-options} (parse-launch-args args)
+        app-home (resolve-app-home {:env-home env-home
                                     :script-path script-path
                                     :fallback-home fallback-home})
-        target-dir (resolve-target-directory args cwd)]
+        target-dir (resolve-target-directory launch-options cwd)]
     {:os (os-family)
      :app-home app-home
      :target-dir target-dir
-     :command [(bb-command) "semantic-compare" target-dir]}))
+     :command (vec (concat [(bb-command) "semantic-compare"]
+                           (when recursive ["--recursive"])
+                           [target-dir]))}))
 
 (defn run-wrapper!
   ([args]
