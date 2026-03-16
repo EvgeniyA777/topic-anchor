@@ -1,6 +1,7 @@
 (ns topic-anchor.test-runner
   (:require [clojure.test :as t]
             topic-anchor.core-test
+            topic-anchor.core-integration-test
             topic-anchor.fs-test
             topic-anchor.html-test
             topic-anchor.ollama-test
@@ -8,6 +9,7 @@
 
 (defn -main [& _]
   (let [{:keys [fail error]} (t/run-tests 'topic-anchor.core-test
+                                          'topic-anchor.core-integration-test
                                           'topic-anchor.fs-test
                                           'topic-anchor.html-test
                                           'topic-anchor.ollama-test
