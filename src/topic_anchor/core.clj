@@ -92,35 +92,42 @@
 
 (defn reason-code [reason]
   ({:empty-text "EMPTY_TEXT"
-    :read-error "READ_ERROR"}
+    :read-error "READ_ERROR"
+    :http-error "HTTP_ERROR"
+    :request-failed "REQUEST_FAILED"
+    :missing-embedding "MALFORMED_RESPONSE"
+    :malformed-response "MALFORMED_RESPONSE"}
    reason
    "UNKNOWN"))
 
 (defn prepare-candidates [options]
-  (reduce
-   (fn [{:keys [comparable skipped]} path]
-     (let [relative-path (fs/relative-display-path (:dir options) path)
-           result (html/extract-text path)]
-       (if (:ok? result)
-         {:comparable (conj comparable {:path path
-                                        :relative-path relative-path
-                                        :text (:text result)})
-          :skipped skipped}
-         {:comparable comparable
-          :skipped (conj skipped {:relative-path relative-path
-                                  :reason (reason-code (:reason result))})})))
-   {:comparable [] :skipped []}
-   (fs/candidate-paths (:dir options)
-                       {:recursive (:recursive options)
-                        :include-hidden (:include-hidden options)
-                        :anchor (:anchor options)})))
+  (let [candidates (fs/candidate-paths (:dir options)
+                                       {:recursive (:recursive options)
+                                        :include-hidden (:include-hidden options)
+                                        :anchor (:anchor options)})]
+    (assoc
+     (reduce
+      (fn [{:keys [comparable skipped]} path]
+        (let [relative-path (fs/relative-display-path (:dir options) path)
+              result (html/extract-text path)]
+          (if (:ok? result)
+            {:comparable (conj comparable {:path path
+                                           :relative-path relative-path
+                                           :text (:text result)})
+             :skipped skipped}
+            {:comparable comparable
+             :skipped (conj skipped {:relative-path relative-path
+                                     :reason (reason-code (:reason result))})})))
+      {:comparable [] :skipped []}
+      candidates)
+     :total-html (count candidates))))
 
 (defn embed-or-error [base-url model text]
   (let [result (ollama/embed-text base-url model text)]
     (if (:ok? result)
       result
       (runtime-error
-       (format "Ollama request failed (%s): %s"
+       (format "Ollama embedding failed (%s): %s"
                (name (:reason result))
                (or (:message result) "no details"))))))
 
@@ -142,17 +149,44 @@
 (defn format-skipped-row [{:keys [reason relative-path]}]
   (str reason "\t" relative-path))
 
-(defn report-lines [classified skipped top]
-  (let [highlights (take top classified)]
+(defn status-counts [classified]
+  (reduce
+   (fn [counts {:keys [status]}]
+     (update counts (or status "-") (fnil inc 0)))
+   {}
+   classified))
+
+(defn summary-row [counts label]
+  (str label ": " (get counts label 0)))
+
+(defn report-lines [options classified skipped total-html top]
+  (let [highlights (take top classified)
+        counts (status-counts classified)
+        sample-mode (if (>= (count classified) 6) "threshold-policy" "small-sample")]
     (vec
      (concat
-      ["Highlights" "STATUS\tSCORE\tPATH"]
+      [(str "Anchor: " (:anchor options))
+       (str "Directory: " (:dir options))
+       (str "Model: " (:model options))
+       (str "Mode: " sample-mode)
+       ""
+       (format "HTML candidates: %d" total-html)
+       (format "Comparable: %d" (count classified))
+       (format "Skipped: %d" (count skipped))
+       ""
+       "Highlights"
+       "STATUS\tSCORE\tPATH"]
       (map format-result-row highlights)
       ["" "Full ranking" "STATUS\tSCORE\tPATH"]
       (map format-result-row classified)
       (when (seq skipped)
         ["" "Skipped" "REASON\tPATH"])
-      (map format-skipped-row skipped)))))
+      (map format-skipped-row skipped)
+      ["" "Summary"
+       (summary-row counts "OK")
+       (summary-row counts "SUSPECT")
+       (summary-row counts "OUTLIER")
+       (summary-row counts "REVIEW")]))))
 
 (defn score-candidates [options anchor-text comparable]
   (let [anchor-embedding (embed-or-error (:base-url options)
@@ -182,10 +216,12 @@
     (cond
       (not (:ok? anchor-result))
       (input-error
-       (str "Anchor file could not be used: " (reason-code (:reason anchor-result))))
+       (str "Anchor file could not be used: " (reason-code (:reason anchor-result))
+            (when-let [message (:message anchor-result)]
+              (str " (" message ")"))))
 
       :else
-      (let [{:keys [comparable skipped]} (prepare-candidates options)]
+      (let [{:keys [comparable skipped total-html]} (prepare-candidates options)]
         (if (empty? comparable)
           (input-error "No comparable HTML files were found after filtering and extraction")
           (let [scored (score-candidates options (:text anchor-result) comparable)]
@@ -193,8 +229,10 @@
               scored
               {:ok? true
                :exit-code 0
-               :lines (report-lines (classify-results (:results scored))
+               :lines (report-lines options
+                                    (classify-results (:results scored))
                                     skipped
+                                    total-html
                                     (:top options))})))))))
 
 (defn -main [& args]

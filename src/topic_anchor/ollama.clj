@@ -53,6 +53,10 @@
             :reason :http-error
             :status status
             :message body}))
+       (catch clojure.lang.ExceptionInfo ex
+         {:ok? false
+          :reason (or (:reason (ex-data ex)) :malformed-response)
+          :message (.getMessage ex)})
        (catch Exception ex
          {:ok? false
           :reason :request-failed
