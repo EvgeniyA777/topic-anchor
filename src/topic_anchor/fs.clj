@@ -7,6 +7,9 @@
 (defn normalize-path [path]
   (.normalize (.toAbsolutePath (.toPath (io/file path)))))
 
+(defn canonical-path [path]
+  (.toPath (.getCanonicalFile (io/file path))))
+
 (defn relative-display-path [root path]
   (str (.normalize (.relativize (normalize-path root) (normalize-path path)))))
 

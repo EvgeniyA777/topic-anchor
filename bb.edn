@@ -1,0 +1,6 @@
+{:paths ["src"]
+ :tasks
+ {semantic-compare
+  {:doc "Interactively select a folder and target file, then run semantic clustering"
+   :requires ([topic-anchor.launcher :as launcher])
+   :task (launcher/run-launcher! *command-line-args*)}}}

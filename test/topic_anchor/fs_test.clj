@@ -50,3 +50,11 @@
                        (fs/candidate-paths root {:recursive true
                                                  :include-hidden true
                                                  :anchor anchor})))))))))
+
+(deftest canonical-path-resolves-dot-segments
+  (with-temp-dir
+    (fn [root]
+      (let [nested (io/file root "nested")]
+        (.mkdir nested)
+        (is (= (.toPath (.getCanonicalFile nested))
+               (fs/canonical-path (io/file nested "."))))))))
