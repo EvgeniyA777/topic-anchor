@@ -24,6 +24,7 @@ Status: v1 local CLI is implemented.
 ## Prerequisites
 
 - Clojure CLI
+- Babashka
 - a running Ollama server
 - an embedding model such as `nomic-embed-text`
 
@@ -35,7 +36,43 @@ ollama pull nomic-embed-text
 clojure -M:test
 ```
 
-## CLI
+## Launcher
+
+Primary operator workflow:
+
+```bash
+bb semantic-compare
+```
+
+Or pass the folder up front:
+
+```bash
+bb semantic-compare ./fixtures/smoke
+```
+
+The launcher:
+
+- asks for the target folder if none was passed
+- canonicalizes the folder path for the current system before invoking the CLI
+- lists the supported files discovered in that folder
+- accepts the target by number, listed relative path, filename, or absolute path
+- writes the terminal report to `topic-anchor-semantic-report.txt` inside the selected folder
+
+The launcher keeps the clustering output unchanged. It only replaces the old external `Makefile` wrapper.
+
+Supported launcher environment variables:
+
+- `TOPIC_ANCHOR_MODEL`
+- `TOPIC_ANCHOR_TOP`
+- `TOPIC_ANCHOR_CHUNK_SIZE`
+- `TOPIC_ANCHOR_CHUNK_OVERLAP`
+- `TOPIC_ANCHOR_CLUSTER_THRESHOLD`
+- `TOPIC_ANCHOR_BASE_URL`
+- `TOPIC_ANCHOR_RECURSIVE`
+- `TOPIC_ANCHOR_INCLUDE_HIDDEN`
+- `TOPIC_ANCHOR_CLOJURE_CMD`
+
+## Core CLI
 
 ```bash
 clojure -M -m topic-anchor.core \
@@ -46,7 +83,6 @@ clojure -M -m topic-anchor.core \
 
 Supported options:
 
-- `--anchor`: path to one known-good in-topic HTML or Markdown file
 - `--anchor`: path to the selected target file to inspect; the flag name is kept for compatibility
 - `--dir`: directory to scan
 - `--model`: Ollama embedding model name
@@ -131,6 +167,7 @@ Override the model or base URL if needed:
 
 ```bash
 clojure -M:test
+bb semantic-compare ./fixtures/smoke
 clojure -M -m topic-anchor.core --help
 ```
 

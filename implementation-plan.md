@@ -6,7 +6,9 @@
 
 The current repo includes:
 
+- a babashka-first interactive launcher in `bb.edn`
 - a runnable CLI entrypoint in `src/topic_anchor/core.clj`
+- launcher orchestration in `src/topic_anchor/launcher.clj`
 - supported file discovery for `.html`, `.htm`, and `.md`
 - extraction dispatch in `src/topic_anchor/document.clj`
 - HTML extraction in `src/topic_anchor/html.clj`
@@ -23,9 +25,18 @@ The current repo includes:
 
 The tool uses embeddings, not duplicate detection. The user selects one file to inspect, and the tool analyzes that file against the whole batch through pairwise similarity and clustering.
 
+The canonical operator flow is now:
+
+```bash
+bb semantic-compare [optional-folder]
+```
+
+If the folder is omitted, the launcher prompts for it, canonicalizes the path for the current OS/runtime, lists the discovered supported files, and then prompts for the target file selection.
+
 ## v1 Decisions
 
 - Implementation language: Clojure
+- Launcher: Babashka task in this repo
 - Project shape: this directory is the separate sibling project
 - Input model: one selected target file plus one target directory
 - Backend: Ollama over HTTP
@@ -33,7 +44,13 @@ The tool uses embeddings, not duplicate detection. The user selects one file to 
 - Default behavior: report only
 - Output: terminal cluster report with target verdict, cluster placement, and per-cluster ranking
 
-Current command shape:
+Canonical launcher shape:
+
+```bash
+bb semantic-compare ./batch
+```
+
+Underlying CLI shape:
 
 ```bash
 clojure -M -m topic-anchor.core --anchor ./good.html --dir ./batch --model nomic-embed-text
@@ -49,6 +66,19 @@ clojure -M -m topic-anchor.core --anchor ./good.html --dir ./batch --model nomic
 - It does not guarantee that the largest cluster is semantically "correct" in any universal sense.
 
 ## Current Interface
+
+Primary launcher:
+
+- `bb semantic-compare`: prompt for folder, canonicalize it, list supported files, prompt for target file
+- `bb semantic-compare <folder>`: skip folder prompt and go straight to target selection
+
+Launcher behavior:
+
+- resolves the selected folder to a canonical path for the current system before invoking the CLI
+- lists discovered `.html`, `.htm`, and `.md` files with stable relative paths
+- accepts target selection by numeric index, listed relative path, filename, or absolute path
+- writes the terminal report to `topic-anchor-semantic-report.txt` in the selected folder
+- keeps the clustering and ranking report semantics unchanged
 
 Required inputs:
 
@@ -68,6 +98,7 @@ Optional inputs:
 
 Current behavior:
 
+- if launched through `bb`, prompt for the folder when not passed, canonicalize it, and prompt for the target file
 - parse the selected target file and each candidate file into normalized text
 - chunk each text with overlap and average chunk embeddings into one document embedding
 - compute pairwise cosine similarity across the full batch
@@ -135,6 +166,7 @@ Project checks:
 
 ```bash
 clojure -M:test
+bb semantic-compare ./fixtures/smoke
 clojure -M -m topic-anchor.core --help
 ./scripts/smoke-local.sh
 ```
