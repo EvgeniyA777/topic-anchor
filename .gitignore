@@ -1,0 +1,8 @@
+.cpcache/
+.nrepl-port
+.DS_Store
+.idea/
+.lsp/
+.shadow-cljs/
+classes/
+target/
