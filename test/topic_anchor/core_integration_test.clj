@@ -33,9 +33,14 @@
         (test-support/write-json! exchange 200 {:embeddings [embedding]})
         (test-support/write-json! exchange 404 {:error (str "no embedding for input: " input)})))))
 
+(defn tags-handler [models]
+  (fn [exchange]
+    (test-support/write-json! exchange 200 {:models (mapv (fn [model] {:name model}) models)})))
+
 (defn run-with-server [options handler]
   (test-support/with-http-server
-    handler
+    {:embed handler
+     :tags (tags-handler [(:model options)])}
     (fn [{:keys [base-url]}]
       (core/run-command (assoc options :base-url base-url)))))
 
@@ -163,3 +168,25 @@
             (is (false? (:ok? result)))
             (is (= 3 (:exit-code result)))
             (is (.contains (:message result) "missing-embedding"))))))))
+
+(deftest run-command-fails-when-model-is-missing
+  (with-temp-dir
+    (fn [root]
+      (let [anchor (write-html! root "anchor.html" "anchor topic")
+            candidate (write-html! root "candidate.html" "candidate topic")]
+        (test-support/with-http-server
+          {:embed (embedding-handler {"anchor topic" [1.0 0.0]
+                                      "candidate topic" (embedding-for-score 0.9)})
+           :tags (tags-handler ["qwen2.5:7b"])}
+          (fn [{:keys [base-url]}]
+            (let [result (core/run-command {:anchor (.getPath anchor)
+                                            :dir (.getPath root)
+                                            :model "nomic-embed-text"
+                                            :base-url base-url
+                                            :recursive true
+                                            :include-hidden false
+                                            :top 5})]
+              (is (false? (:ok? result)))
+              (is (= 3 (:exit-code result)))
+              (is (.contains (:message result) "nomic-embed-text"))
+              (is (.contains (:message result) "ollama pull nomic-embed-text")))))))))

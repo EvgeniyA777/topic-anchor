@@ -42,6 +42,11 @@
     (is (.contains text "--anchor ./good.html"))
     (is (.contains text "summary"))))
 
+(deftest model-installed-accepts-latest-tag-for-untagged-request
+  (is (true? (core/model-installed? "nomic-embed-text" "nomic-embed-text:latest")))
+  (is (true? (core/model-installed? "qwen2.5:7b" "qwen2.5:7b")))
+  (is (false? (core/model-installed? "nomic-embed-text" "mistral:7b"))))
+
 (deftest run-command-renders-review-and-skipped-sections-for-small-batches
   (with-temp-dir
     (fn [root]
@@ -54,12 +59,15 @@
         (spit weak "<html><body>weak</body></html>")
         (spit empty "<html><body>   </body></html>")
         (test-support/with-http-server
-          (fn [exchange]
-            (let [body (slurp (.getRequestBody exchange))]
-              (cond
-                (.contains body "\"anchor\"") (test-support/write-json! exchange 200 {:embeddings [[1.0 0.0]]})
-                (.contains body "\"good\"") (test-support/write-json! exchange 200 {:embeddings [[0.98 0.2]]})
-                :else (test-support/write-json! exchange 200 {:embeddings [[0.60 0.8]]}))))
+          {:embed (fn [exchange]
+                    (let [body (slurp (.getRequestBody exchange))]
+                      (cond
+                        (.contains body "\"anchor\"") (test-support/write-json! exchange 200 {:embeddings [[1.0 0.0]]})
+                        (.contains body "\"good\"") (test-support/write-json! exchange 200 {:embeddings [[0.98 0.2]]})
+                        :else (test-support/write-json! exchange 200 {:embeddings [[0.60 0.8]]})))
+                    )
+           :tags (fn [exchange]
+                   (test-support/write-json! exchange 200 {:models [{:name "demo-model"}]}))}
           (fn [{:keys [base-url]}]
             (let [result (core/run-command {:anchor (.getPath anchor)
                                             :dir (.getPath root)
@@ -96,14 +104,16 @@
         (doseq [[filename token] candidates]
           (spit (io/file root filename) (str "<html><body>" token "</body></html>")))
         (test-support/with-http-server
-          (fn [exchange]
-            (let [body (slurp (.getRequestBody exchange))
-                  token (some (fn [[name _]]
-                                (when (.contains body (str "\"" name "\""))
-                                  name))
-                              embeddings)
-                  [x y] (get embeddings token)]
-              (test-support/write-json! exchange 200 {:embeddings [[x y]]})))
+          {:embed (fn [exchange]
+                    (let [body (slurp (.getRequestBody exchange))
+                          token (some (fn [[name _]]
+                                        (when (.contains body (str "\"" name "\""))
+                                          name))
+                                      embeddings)
+                          [x y] (get embeddings token)]
+                      (test-support/write-json! exchange 200 {:embeddings [[x y]]})))
+           :tags (fn [exchange]
+                   (test-support/write-json! exchange 200 {:models [{:name "demo-model"}]}))}
           (fn [{:keys [base-url]}]
             (let [result (core/run-command {:anchor (.getPath anchor)
                                             :dir (.getPath root)

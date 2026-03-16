@@ -45,6 +45,14 @@
 (defn runtime-error [message]
   {:ok? false :exit-code 3 :message message})
 
+(defn model-pull-command [model]
+  (str "ollama pull " model))
+
+(defn model-installed? [requested installed]
+  (or (= requested installed)
+      (and (not (str/includes? requested ":"))
+           (= (str requested ":latest") installed))))
+
 (defn blank-option? [value]
   (or (nil? value)
       (and (string? value)
@@ -119,17 +127,45 @@
              :skipped (conj skipped {:relative-path relative-path
                                      :reason (reason-code (:reason result))})})))
       {:comparable [] :skipped []}
-      candidates)
+     candidates)
      :total-html (count candidates))))
+
+(defn format-ollama-error [base-url model {:keys [reason message]}]
+  (case reason
+    :model-not-found
+    (format "Ollama model '%s' is not installed at %s. Run: %s"
+            model
+            base-url
+            (model-pull-command model))
+
+    :service-unreachable
+    (format "Ollama is not reachable at %s. Start it with 'ollama serve' and verify /api/tags responds."
+            base-url)
+
+    (format "Ollama request failed (%s): %s"
+            (name reason)
+            (or message "no details"))))
+
+(defn ensure-model-available [options]
+  (let [result (ollama/list-models (:base-url options))]
+    (cond
+      (:ok? result)
+      (if (some #(model-installed? (:model options) %) (:models result))
+        {:ok? true}
+        (runtime-error
+         (format "Ollama model '%s' is not installed at %s. Run: %s"
+                 (:model options)
+                 (:base-url options)
+                 (model-pull-command (:model options)))))
+
+      :else
+      (runtime-error (format-ollama-error (:base-url options) (:model options) result)))))
 
 (defn embed-or-error [base-url model text]
   (let [result (ollama/embed-text base-url model text)]
     (if (:ok? result)
       result
-      (runtime-error
-       (format "Ollama embedding failed (%s): %s"
-               (name (:reason result))
-               (or (:message result) "no details"))))))
+      (runtime-error (format-ollama-error base-url model result)))))
 
 (defn classify-results [results]
   (let [scores (mapv :score results)
@@ -224,16 +260,19 @@
       (let [{:keys [comparable skipped total-html]} (prepare-candidates options)]
         (if (empty? comparable)
           (input-error "No comparable HTML files were found after filtering and extraction")
-          (let [scored (score-candidates options (:text anchor-result) comparable)]
-            (if-not (:ok? scored)
-              scored
-              {:ok? true
-               :exit-code 0
-               :lines (report-lines options
-                                    (classify-results (:results scored))
-                                    skipped
-                                    total-html
-                                    (:top options))})))))))
+          (let [model-check (ensure-model-available options)]
+            (if-not (:ok? model-check)
+              model-check
+              (let [scored (score-candidates options (:text anchor-result) comparable)]
+                (if-not (:ok? scored)
+                  scored
+                  {:ok? true
+                   :exit-code 0
+                   :lines (report-lines options
+                                        (classify-results (:results scored))
+                                        skipped
+                                        total-html
+                                        (:top options))})))))))))
 
 (defn -main [& args]
   (let [{:keys [options summary errors]} (parse-opts args cli-options)

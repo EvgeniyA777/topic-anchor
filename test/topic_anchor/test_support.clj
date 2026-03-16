@@ -10,16 +10,30 @@
     (with-open [body (.getResponseBody exchange)]
       (.write body bytes))))
 
-(defn with-http-server [handler f]
-  (let [server (HttpServer/create (InetSocketAddress. 0) 0)]
+(defn- with-http-server-config [{:keys [embed tags]} f]
+  (let [server (HttpServer/create (InetSocketAddress. 0) 0)
+        tags-handler (or tags
+                         (fn [exchange]
+                           (write-json! exchange 200 {:models []})))]
     (.createContext
      server
      "/api/embed"
      (reify HttpHandler
        (handle [_ exchange]
-         (handler exchange))))
+         (embed exchange))))
+    (.createContext
+     server
+     "/api/tags"
+     (reify HttpHandler
+       (handle [_ exchange]
+         (tags-handler exchange))))
     (.start server)
     (try
       (f {:base-url (str "http://127.0.0.1:" (.getPort (.getAddress server)))})
       (finally
         (.stop server 0)))))
+
+(defn with-http-server [handler-or-config f]
+  (if (map? handler-or-config)
+    (with-http-server-config handler-or-config f)
+    (with-http-server-config {:embed handler-or-config} f)))

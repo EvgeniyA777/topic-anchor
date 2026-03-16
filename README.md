@@ -97,6 +97,12 @@ Run the local smoke workflow:
 ./scripts/smoke-local.sh
 ```
 
+The smoke script now performs two preflight checks before running the CLI:
+
+- verifies that Ollama responds on `--base-url` via `/api/tags`
+- verifies that the requested model is installed; `nomic-embed-text` and `nomic-embed-text:latest` are treated as the same installed model name
+- if the model is missing, it prints `ollama pull <model>`
+
 Override the model or base URL if needed:
 
 ```bash
