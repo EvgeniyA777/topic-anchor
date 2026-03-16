@@ -1,16 +1,18 @@
 # topic-anchor
 
-`topic-anchor` is a small Clojure CLI for finding files in a folder that look off-topic relative to one trusted anchor HTML or Markdown file.
+`topic-anchor` is a small Clojure CLI for locating a selected HTML or Markdown file inside the semantic cluster structure of a folder.
 
 Status: v1 local CLI is implemented.
 
 ## What It Does
 
 - scans a directory of `.html`, `.htm`, and `.md` files
-- extracts normalized text from each candidate
-- embeds the anchor and candidates through Ollama over HTTP
-- ranks candidates by cosine similarity to the anchor
-- prints `REVIEW`, `SUSPECT`, `OUTLIER`, or `OK` review signals in the terminal
+- extracts normalized text from each file
+- chunks long documents with overlap, embeds each chunk through Ollama over HTTP, and averages chunk vectors into one document embedding
+- computes pairwise cosine similarity across the whole batch
+- groups files into semantic clusters using a similarity threshold
+- reports the selected target file as `IN_CLUSTER`, `SEPARATE_CLUSTER`, or `OUTLIER`
+- prints the target file's cluster rank and rank inside its cluster
 
 ## What It Does Not Do
 
@@ -45,12 +47,16 @@ clojure -M -m topic-anchor.core \
 Supported options:
 
 - `--anchor`: path to one known-good in-topic HTML or Markdown file
+- `--anchor`: path to the selected target file to inspect; the flag name is kept for compatibility
 - `--dir`: directory to scan
 - `--model`: Ollama embedding model name
+- `--cluster-threshold`: similarity threshold for strong-neighbor edges, default `0.9`
+- `--chunk-size`: characters per embedding chunk, default `1800`
+- `--chunk-overlap`: characters of overlap between chunks, default `200`
 - `--base-url`: Ollama base URL, default `http://127.0.0.1:11434`
 - `--recursive`: recurse into subdirectories, default `true`
 - `--include-hidden`: include hidden files and directories, default `false`
-- `--top`: number of lowest-score results to repeat in the `Highlights` section, default `5`
+- `--top`: legacy option retained for compatibility; current cluster reporting does not use it
 
 Exit codes:
 
@@ -60,32 +66,44 @@ Exit codes:
 
 ## Decision Rule
 
-- if fewer than 6 comparable HTML or Markdown files are scored, only the single lowest-scoring file is marked `REVIEW`
-- if 6 or more comparable HTML or Markdown files are scored:
-  - compute the batch median similarity score
-  - compute the median absolute deviation with a floor of `0.02`
-  - mark `OUTLIER` if `score < median - 3 * mad-floor`
-  - mark `SUSPECT` if `score < median - 2 * mad-floor`
-  - otherwise mark `OK`
+- embed every comparable file in the batch into one document vector
+- compute pairwise cosine similarity for every document pair
+- connect files whose similarity is at least `--cluster-threshold`
+- take connected components of that graph as semantic clusters
+- evaluate the selected target file against those clusters:
+  - `OUTLIER`: target forms a singleton cluster
+  - `IN_CLUSTER`: target is inside the top-ranked cluster
+  - `SEPARATE_CLUSTER`: target belongs to a non-singleton cluster that is not the top-ranked one
 
-This output is heuristic. Low-scoring files should be reviewed first. High-scoring files are not guaranteed to be correct.
+This output is heuristic. A target can still be misclassified if the batch is noisy, the extraction is poor, or the embedding model is weak.
 
 ## Output Shape
 
-The CLI prints a short run header followed by these blocks:
+The CLI prints a run header followed by these blocks:
 
-- `Highlights`: the lowest `--top` results
-- `Full ranking`: all comparable files sorted lowest-score first
+- `Target analysis`: verdict, target cluster rank, target cluster size, target rank in cluster, target average similarity, target strong neighbors
+- `Clusters`: one summary row per cluster
+- `Cluster N Members`: ranked members inside each cluster
 - `Skipped`: files that were discovered but not comparable, for example `EMPTY_TEXT`
-- `Summary`: final counts by status
 
-Row format:
+Cluster summary row format:
 
 ```text
-STATUS<TAB>SCORE<TAB>RELATIVE_PATH
+CLUSTER<TAB>SIZE<TAB>COHESION<TAB>TARGET
 ```
 
-For small batches, only the single lowest row is marked `REVIEW`; the other comparable rows are shown with `-` in the status column.
+Cluster member row format:
+
+```text
+RANK<TAB>ROLE<TAB>AVG_ALL<TAB>AVG_CLUSTER<TAB>STRONG<TAB>RELATIVE_PATH
+```
+
+Where:
+
+- `ROLE` is `TARGET` for the selected file and `-` otherwise
+- `AVG_ALL` is mean similarity to the whole batch
+- `AVG_CLUSTER` is mean similarity inside the file's cluster
+- `STRONG` is the number of neighbors at or above `--cluster-threshold`
 
 ## Smoke Workflow
 
@@ -121,6 +139,7 @@ clojure -M -m topic-anchor.core --help
 - implementation plan: [implementation-plan.md](./implementation-plan.md)
 - architectural decision: [adr/0001-anchor-based-topic-screening.md](./adr/0001-anchor-based-topic-screening.md)
 - markdown support decision: [adr/0002-add-markdown-support.md](./adr/0002-add-markdown-support.md)
+- pairwise clustering decision: [adr/0003-replace-anchor-centric-screening-with-pairwise-clustering.md](./adr/0003-replace-anchor-centric-screening-with-pairwise-clustering.md)
 
 ## License
 

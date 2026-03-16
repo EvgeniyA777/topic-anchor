@@ -12,24 +12,26 @@ The current repo includes:
 - HTML extraction in `src/topic_anchor/html.clj`
 - Markdown extraction in `src/topic_anchor/markdown.clj`
 - Ollama HTTP embedding calls
-- cosine similarity scoring and threshold policy
+- chunked document embeddings with overlap
+- pairwise cosine similarity scoring across the whole batch
+- cluster-based target analysis
 - automated tests plus a local smoke workflow
 
 ## Goal
 
-`topic-anchor` is a small Clojure tool for flagging files in a folder that look off-topic relative to one trusted anchor file.
+`topic-anchor` is a small Clojure tool for telling the user where a selected file sits inside the semantic structure of a folder.
 
-The tool uses embeddings, not duplicate detection. The user supplies one file that is definitely in-topic, and the tool ranks other files by semantic similarity to that anchor.
+The tool uses embeddings, not duplicate detection. The user selects one file to inspect, and the tool analyzes that file against the whole batch through pairwise similarity and clustering.
 
 ## v1 Decisions
 
 - Implementation language: Clojure
 - Project shape: this directory is the separate sibling project
-- Input model: one trusted anchor file plus one target directory
+- Input model: one selected target file plus one target directory
 - Backend: Ollama over HTTP
 - Supported formats in v1: `.html`, `.htm`, `.md`
 - Default behavior: report only
-- Output: terminal ranking with `OK`, `SUSPECT`, `OUTLIER`, `REVIEW`, or `-` for non-flagged small-sample rows
+- Output: terminal cluster report with target verdict, cluster placement, and per-cluster ranking
 
 Current command shape:
 
@@ -44,88 +46,86 @@ clojure -M -m topic-anchor.core --anchor ./good.html --dir ./batch --model nomic
 - It does not replace human review for borderline cases.
 - It does not move, delete, or rewrite files in v1.
 - It does not support every file type in v1.
-- It does not auto-discover the topic from the whole folder in v1.
+- It does not guarantee that the largest cluster is semantically "correct" in any universal sense.
 
 ## Current Interface
 
 Required inputs:
 
-- `--anchor`: path to one known-good in-topic HTML or Markdown file
+- `--anchor`: path to the selected target file; the option name is retained for compatibility
 - `--dir`: directory to scan
 - `--model`: Ollama embedding model name
 
 Optional inputs:
 
+- `--cluster-threshold`: similarity threshold used to form strong-neighbor graph edges, default `0.9`
+- `--chunk-size`: characters per embedding chunk, default `1800`
+- `--chunk-overlap`: characters of overlap between chunks, default `200`
 - `--base-url`: Ollama base URL, default `http://127.0.0.1:11434`
 - `--recursive`: recurse into subdirectories, default `true`
 - `--include-hidden`: include hidden files and directories, default `false`
-- `--top`: number of lowest-score results to highlight, default `5`
+- `--top`: retained for compatibility; current cluster reporting does not use it
 
 Current behavior:
 
-- parse the anchor file and each candidate file into normalized text
-- request one embedding for the anchor and one for each candidate
-- compute cosine similarity between each candidate and the anchor
-- sort lowest score first
-- print a terminal report with header, highlights, full ranking, skipped files, and summary
+- parse the selected target file and each candidate file into normalized text
+- chunk each text with overlap and average chunk embeddings into one document embedding
+- compute pairwise cosine similarity across the full batch
+- build semantic clusters from strong-neighbor graph edges
+- print a terminal report with target analysis, cluster summaries, cluster member rankings, and skipped files
 - return exit code `2` for input errors and `3` for Ollama/runtime failures
 - perform a live Ollama preflight against `/api/tags` before embedding calls
 - fail fast with a pull hint if the requested embedding model is not installed
 
-## Threshold Policy
+## Clustering Policy
 
-Similarity score:
+Document representation:
 
-- each candidate gets one cosine similarity score against the anchor embedding
-- lower score means less semantic similarity to the anchor
+- each document is chunked with overlap before embedding
+- chunk embeddings are averaged into one document vector
 
-Status rules:
+Graph construction:
 
-- if fewer than 6 comparable HTML or Markdown files are scored, do not emit hard `OK`, `SUSPECT`, or `OUTLIER`
-- for these small sets, rank all files by score and mark only the single lowest-scoring file as `REVIEW`
-- if 6 or more comparable HTML or Markdown files are scored, compute:
-  - `median-score = median(all similarity scores)`
-  - `mad = median(abs(score - median-score))`
-  - `mad-floor = max(mad, 0.02)`
-- then label:
-  - `OUTLIER` if `score < median-score - 3 * mad-floor`
-  - `SUSPECT` if `score < median-score - 2 * mad-floor`
-  - `OK` otherwise
+- compute pairwise cosine similarity between every two document vectors
+- create an undirected edge if `similarity >= cluster-threshold`
+- connected components of this graph are treated as clusters
 
 Interpretation rules:
 
-- `REVIEW` is a small-sample fallback, not a hard judgment
-- `SUSPECT` means the file is materially less similar than the folder norm and should be checked
-- `OUTLIER` means the file is strongly separated from the folder norm and should be checked first
-- status is based on the current folder batch, not on a global universal threshold
+- `IN_CLUSTER` means the selected file belongs to the top-ranked cluster
+- `SEPARATE_CLUSTER` means the selected file belongs to a non-singleton cluster that is not the top-ranked cluster
+- `OUTLIER` means the selected file forms a singleton cluster
+- member ranking inside a cluster is based on average cluster similarity, then strong-neighbor count, then overall average similarity
 
 ## Failure Modes And Limits
 
 What the tool does:
 
-- gives a heuristic semantic similarity signal relative to one anchor file
-- helps surface likely wrong-file drops in a mostly coherent folder
+- gives a heuristic structural view of a folder through embeddings and clusters
+- helps show whether the selected file sits inside the dominant cluster, a side cluster, or by itself
 
 What the tool does not do:
 
 - guarantee topic membership
-- separate multiple valid topics inside one folder
-- work well if the anchor file is itself weak or off-topic
+- prove that the largest cluster is the "right" topic
+- remove ambiguity from heavily mixed folders without human judgment
 
 What the user may infer:
 
-- low-scoring files deserve manual review first
-- the folder may contain one or more thematic outliers
+- the selected file is structurally close to one cluster, another cluster, or to none
+- the dominant cluster is the best local approximation of the folder's main topic
+- low-ranked cluster members are weaker members of their cluster than higher-ranked members
 
 What the user must not infer:
 
-- a low score means the file is definitely wrong
-- a high score means the file is definitely correct
+- `IN_CLUSTER` means the selected file is definitely correct
+- `OUTLIER` means the selected file is definitely wrong
 - the tool understands document intent beyond the embedding signal
 
 Known risks:
 
-- tiny file sets are harder to classify confidently
+- graph connectivity can merge borderline documents into a larger cluster through chains of strong edges
+- threshold choice changes cluster shape materially
 - extraction quality affects the embedding signal
 - Ollama availability and model quality directly affect results
 
@@ -151,3 +151,4 @@ Reference ADR:
 
 - [adr/0001-anchor-based-topic-screening.md](./adr/0001-anchor-based-topic-screening.md)
 - [adr/0002-add-markdown-support.md](./adr/0002-add-markdown-support.md)
+- [adr/0003-replace-anchor-centric-screening-with-pairwise-clustering.md](./adr/0003-replace-anchor-centric-screening-with-pairwise-clustering.md)

@@ -36,6 +36,20 @@
     (is (.contains message "--dir"))
     (is (.contains message "--model"))))
 
+(deftest validate-cli-rejects-invalid-chunk-settings
+  (with-temp-dir
+    (fn [root]
+      (let [anchor (io/file root "anchor.md")]
+        (spit anchor "# anchor")
+        (let [{:keys [ok? message]} (core/validate-cli {:options {:anchor (.getPath anchor)
+                                                                   :dir (.getPath root)
+                                                                   :model "nomic-embed-text"
+                                                                   :chunk-size 100
+                                                                   :chunk-overlap 100}
+                                                        :errors nil})]
+          (is (false? ok?))
+          (is (.contains message "--chunk-overlap must be smaller than --chunk-size")))))))
+
 (deftest usage-text-documents-command-shape
   (let [text (core/usage "summary")]
     (is (.contains text "topic-anchor"))
@@ -77,9 +91,10 @@
                                             :include-hidden false
                                             :top 2})]
               (is (:ok? result))
-              (is (some #{"Highlights"} (:lines result)))
-              (is (some #{"REVIEW\t0.6000\tweak.html"} (:lines result)))
-              (is (some #{"-\t0.9798\tgood.html"} (:lines result)))
+              (is (some #{"Target verdict: IN_CLUSTER"} (:lines result)))
+              (is (some #{"1\t2\t0.9798\tTARGET"} (:lines result)))
+              (is (some #{"1\t-\t0.8638\t0.9798\t1\tgood.html"} (:lines result)))
+              (is (some #{"1\t-\t0.6739\t0.0000\t0\tweak.html"} (:lines result)))
               (is (some #{"Skipped"} (:lines result)))
               (is (some #{"EMPTY_TEXT\tempty.html"} (:lines result))))))))))
 
@@ -110,8 +125,9 @@
                                             :include-hidden false
                                             :top 2})]
               (is (:ok? result))
-              (is (some #{"REVIEW\t0.2000\tfar.md"} (:lines result)))
-              (is (some #{"-\t0.9507\tnear.md"} (:lines result))))))))))
+              (is (some #{"Target verdict: IN_CLUSTER"} (:lines result)))
+              (is (some #{"1\t-\t0.7224\t0.9507\t1\tnear.md"} (:lines result)))
+              (is (some #{"1\t-\t0.3470\t0.0000\t0\tfar.md"} (:lines result))))))))))
 
 (deftest run-command-classifies-large-batches
   (with-temp-dir
@@ -153,6 +169,12 @@
                                             :include-hidden false
                                             :top 3})]
               (is (:ok? result))
-              (is (some #{"OUTLIER\t0.7000\toutlier.html"} (:lines result)))
-              (is (some #{"SUSPECT\t0.9000\tsuspect.html"} (:lines result)))
-              (is (some #{"OK\t0.9500\tok-4.html"} (:lines result))))))))))
+              (is (some #{"Target verdict: IN_CLUSTER"} (:lines result)))
+              (is (some #{"Target cluster size: 7"} (:lines result)))
+              (is (some #{"1\t-\t0.9674\t0.9674\t5\tok-4.html"} (:lines result)))
+              (is (some #{"7\t-\t0.8340\t0.8340\t1\toutlier.html"} (:lines result))))))))))
+
+(deftest average-embeddings-computes-component-wise-mean
+  (is (= [2.0 3.0]
+         (core/average-embeddings [[1.0 2.0]
+                                   [3.0 4.0]]))))

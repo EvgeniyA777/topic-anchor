@@ -69,12 +69,12 @@
                                         "other topic" (embedding-for-score 0.0)}))]
         (is (:ok? result))
         (is (= 0 (:exit-code result)))
-        (is (.contains (str/join "\n" (:lines result)) "Mode: small-sample"))
+        (is (.contains (str/join "\n" (:lines result)) "Target verdict: IN_CLUSTER"))
         (is (.contains (str/join "\n" (:lines result)) "Supported candidates: 3"))
         (is (.contains (str/join "\n" (:lines result)) "Comparable: 2"))
         (is (.contains (str/join "\n" (:lines result)) "Skipped: 1"))
-        (is (.contains (str/join "\n" (:lines result)) "REVIEW\t0.0000\tother.html"))
-        (is (.contains (str/join "\n" (:lines result)) "-\t0.9900\tnear.html"))
+        (is (.contains (str/join "\n" (:lines result)) "near.html"))
+        (is (.contains (str/join "\n" (:lines result)) "other.html"))
         (is (.contains (str/join "\n" (:lines result)) "EMPTY_TEXT\tempty.html"))))))
 
 (deftest run-command-reports-threshold-based-statuses
@@ -104,14 +104,11 @@
                            scores)))
             text (str/join "\n" (:lines result))]
         (is (:ok? result))
-        (is (.contains text "Mode: threshold-policy"))
-        (is (.contains text "OUTLIER\t0.7000\tf.html"))
-        (is (.contains text "SUSPECT\t0.8500\te.html"))
-        (is (.contains text "OK\t0.9000\td.html"))
-        (is (.contains text "OK: 4"))
-        (is (.contains text "SUSPECT: 1"))
-        (is (.contains text "OUTLIER: 1"))
-        (is (.contains text "REVIEW: 0"))))))
+        (is (.contains text "Target verdict: IN_CLUSTER"))
+        (is (.contains text "Clusters: 1"))
+        (is (.contains text "d.html"))
+        (is (.contains text "e.html"))
+        (is (.contains text "f.html"))))))
 
 (deftest run-command-fails-for-empty-anchor
   (with-temp-dir
@@ -165,8 +162,9 @@
                                         "other topic" (embedding-for-score 0.10)}))
             text (str/join "\n" (:lines result))]
         (is (:ok? result))
-        (is (.contains text "REVIEW\t0.1000\tother.md"))
-        (is (.contains text "-\t0.9700\tnear.md"))))))
+        (is (.contains text "Target verdict: IN_CLUSTER"))
+        (is (.contains text "near.md"))
+        (is (.contains text "other.md"))))))
 
 (deftest run-command-fails-for-http-and-malformed-ollama-responses
   (with-temp-dir
@@ -217,3 +215,44 @@
               (is (= 3 (:exit-code result)))
               (is (.contains (:message result) "nomic-embed-text"))
               (is (.contains (:message result) "ollama pull nomic-embed-text")))))))))
+
+(deftest run-command-chunks-documents-with-overlap-before-embedding
+  (with-temp-dir
+    (fn [root]
+      (let [anchor (write-md! root "anchor.md" "abcdefghij")
+            near (write-md! root "near.md" "abcdwxyzij")
+            seen-inputs (atom [])
+            embeddings {"abcdefghij" [1.0 0.0]
+                        "abcd" [1.0 0.0]
+                        "cdef" [1.0 0.0]
+                        "efgh" [0.0 1.0]
+                        "ghij" [0.0 1.0]
+                        "ij" [1.0 0.0]
+                        "abcdwxyzij" [0.0 1.0]
+                        "cdwx" [0.0 1.0]
+                        "wxyz" [0.0 1.0]
+                        "yzij" [1.0 0.0]}
+            options {:anchor (.getPath anchor)
+                     :dir (.getPath root)
+                     :model "demo"
+                     :recursive true
+                     :include-hidden false
+                     :top 5
+                     :chunk-size 4
+                     :chunk-overlap 2}
+            result (run-with-server
+                    options
+                    (fn [exchange]
+                      (let [payload (json/read-str (slurp (.getRequestBody exchange)) :key-fn keyword)
+                            input (:input payload)]
+                        (swap! seen-inputs conj input)
+                        (if-let [embedding (get embeddings input)]
+                          (test-support/write-json! exchange 200 {:embeddings [embedding]})
+                          (test-support/write-json! exchange 404 {:error (str "no embedding for input: " input)})))))
+            text (str/join "\n" (:lines result))]
+        (is (:ok? result))
+        (is (= ["abcd" "cdef" "efgh" "ghij" "ij"
+                "abcd" "cdwx" "wxyz" "yzij" "ij"]
+               @seen-inputs))
+        (is (.contains text "Target verdict: IN_CLUSTER"))
+        (is (.contains text "near.md"))))))
