@@ -1,6 +1,7 @@
 (ns topic-anchor.core
   (:gen-class)
-  (:require [clojure.string :as str]
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str]
             [clojure.tools.cli :refer [parse-opts]]))
 
 (def cli-options
@@ -29,13 +30,49 @@
     "Usage:"
     "  clojure -M -m topic-anchor.core --anchor ./good.html --dir ./batch --model nomic-embed-text"
     ""
-    "Options:"
+   "Options:"
     summary]))
+
+(def required-option-keys [:anchor :dir :model])
+
+(defn- blank-option? [value]
+  (or (nil? value)
+      (and (string? value)
+           (str/blank? value))))
+
+(defn- option-label [k]
+  (str "--" (name k)))
+
+(defn- existing-file? [path]
+  (.isFile (io/file path)))
+
+(defn- existing-directory? [path]
+  (.isDirectory (io/file path)))
+
+(defn validation-errors [options]
+  (let [missing (->> required-option-keys
+                     (filter #(blank-option? (get options %)))
+                     (map option-label))
+        errors (transient [])]
+    (when (seq missing)
+      (conj! errors (str "Missing required option(s): " (str/join ", " missing))))
+    (when-let [anchor (:anchor options)]
+      (when-not (blank-option? anchor)
+        (when-not (existing-file? anchor)
+          (conj! errors (str "Anchor file does not exist: " anchor)))))
+    (when-let [dir (:dir options)]
+      (when-not (blank-option? dir)
+        (when-not (existing-directory? dir)
+          (conj! errors (str "Directory to scan does not exist: " dir)))))
+    (persistent! errors)))
 
 (defn validate-cli [{:keys [options errors]}]
   (cond
     (seq errors) {:ok? false :exit-code 2 :message (str/join \newline errors)}
-    (:help options) {:ok? false :exit-code 0 :message (usage nil)}
+    (:help options) {:ok? false :exit-code 0 :message :help}
+    (seq (validation-errors options)) {:ok? false
+                                       :exit-code 2
+                                       :message (str/join \newline (validation-errors options))}
     :else {:ok? true :options options}))
 
 (defn -main [& args]
@@ -43,9 +80,16 @@
         {:keys [ok? exit-code message]} (validate-cli {:options options :errors errors})]
     (if ok?
       (do
-        (println "Bootstrap complete. Pipeline implementation is not wired yet.")
-        (println "Run with --help to see the planned CLI surface.")
+        (println "Bootstrap CLI check passed.")
+        (println "Anchor:" (:anchor options))
+        (println "Directory:" (:dir options))
+        (println "Model:" (:model options))
+        (println "Base URL:" (:base-url options))
+        (println "Recursive:" (:recursive options))
+        (println "Include hidden:" (:include-hidden options))
+        (println "Top results:" (:top options))
+        (println "Pipeline implementation is not wired yet.")
         0)
       (do
-        (println (if (:help options) (usage summary) (or message (usage summary))))
+        (println (if (= :help message) (usage summary) (or message (usage summary))))
         (System/exit exit-code)))))
