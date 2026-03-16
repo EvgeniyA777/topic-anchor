@@ -7,8 +7,10 @@
 The current repo includes:
 
 - a babashka-first interactive launcher in `bb.edn`
+- a cross-repo wrapper in `bin/topic-anchor-here`
 - a runnable CLI entrypoint in `src/topic_anchor/core.clj`
 - launcher orchestration in `src/topic_anchor/launcher.clj`
+- wrapper orchestration in `src/topic_anchor/wrapper.clj`
 - supported file discovery for `.html`, `.htm`, and `.md`
 - extraction dispatch in `src/topic_anchor/document.clj`
 - HTML extraction in `src/topic_anchor/html.clj`
@@ -33,10 +35,19 @@ bb semantic-compare [optional-folder]
 
 If the folder is omitted, the launcher prompts for it, canonicalizes the path for the current OS/runtime, lists the discovered supported files, and then prompts for the target file selection.
 
+For cross-repo use, the wrapper flow is:
+
+```bash
+bin/topic-anchor-here [optional-folder]
+```
+
+When no folder is passed, the wrapper uses the current working directory as the target folder, resolves the `topic-anchor` app home, and then launches the existing `bb semantic-compare` workflow from there.
+
 ## v1 Decisions
 
 - Implementation language: Clojure
 - Launcher: Babashka task in this repo
+- Cross-repo entrypoint: Babashka wrapper script in `bin/`
 - Project shape: this directory is the separate sibling project
 - Input model: one selected target file plus one target directory
 - Backend: Ollama over HTTP
@@ -48,6 +59,12 @@ Canonical launcher shape:
 
 ```bash
 bb semantic-compare ./batch
+```
+
+Cross-repo wrapper shape:
+
+```bash
+bin/topic-anchor-here ./batch
 ```
 
 Underlying CLI shape:
@@ -71,6 +88,8 @@ Primary launcher:
 
 - `bb semantic-compare`: prompt for folder, canonicalize it, list supported files, prompt for target file
 - `bb semantic-compare <folder>`: skip folder prompt and go straight to target selection
+- `bin/topic-anchor-here`: use the current working directory as the target folder and launch from the `topic-anchor` app home
+- `bin/topic-anchor-here <folder>`: use the provided folder instead of the current working directory
 
 Launcher behavior:
 
@@ -79,6 +98,12 @@ Launcher behavior:
 - accepts target selection by numeric index, listed relative path, filename, or absolute path
 - writes the terminal report to `topic-anchor-semantic-report.txt` in the selected folder
 - keeps the clustering and ranking report semantics unchanged
+
+Wrapper behavior:
+
+- detects the current OS and relies on JVM path canonicalization so path separators and absolute path forms follow the local platform
+- resolves the app home from `TOPIC_ANCHOR_HOME` first, then from the wrapper script location
+- runs `bb semantic-compare` from the resolved app home against the canonical target folder
 
 Required inputs:
 
@@ -167,6 +192,7 @@ Project checks:
 ```bash
 clojure -M:test
 bb semantic-compare ./fixtures/smoke
+/Users/ae/workspaces/topic-anchor/bin/topic-anchor-here ./fixtures/smoke
 clojure -M -m topic-anchor.core --help
 ./scripts/smoke-local.sh
 ```

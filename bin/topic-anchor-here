@@ -1,0 +1,17 @@
+#!/usr/bin/env bb
+
+(require '[babashka.classpath :as cp]
+         '[clojure.java.io :as io])
+
+(let [script-path (System/getProperty "babashka.file")
+      repo-home (some-> script-path
+                        io/file
+                        .getCanonicalFile
+                        .toPath
+                        .getParent
+                        .getParent
+                        str)]
+  (when repo-home
+    (cp/add-classpath (str (io/file repo-home "src"))))
+  (require 'topic-anchor.wrapper)
+  (apply (resolve 'topic-anchor.wrapper/-main) *command-line-args*))
