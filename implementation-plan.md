@@ -48,6 +48,7 @@ When no folder is passed, the wrapper uses the current working directory as the 
 The supported installation flow is:
 
 ```bash
+cd /Users/ae/workspaces/topic-anchor
 bb install-user
 ```
 
@@ -120,6 +121,7 @@ Wrapper behavior:
 Installer behavior:
 
 - chooses the install directory from `TOPIC_ANCHOR_BIN_DIR`, then OS defaults
+- is intended to be run from the `topic-anchor` repo root
 - prefers a Unix symlink and falls back to a generated wrapper when symlinks are unavailable
 - installs a Windows batch shim on Windows
 - refuses to overwrite a different existing `topic-anchor` command in `PATH`
@@ -213,6 +215,7 @@ Project checks:
 clojure -M:test
 bb semantic-compare ./fixtures/smoke
 bb install-user
+# after PATH is updated from the installer output:
 topic-anchor ./fixtures/smoke
 clojure -M -m topic-anchor.core --help
 ./scripts/smoke-local.sh

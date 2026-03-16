@@ -62,13 +62,14 @@ The launcher keeps the clustering output unchanged. It only replaces the old ext
 
 ## Cross-Repo Wrapper
 
-Install the global command:
+Install the global command from the `topic-anchor` repo root:
 
 ```bash
+cd /Users/ae/workspaces/topic-anchor
 bb install-user
 ```
 
-Then run it from the repo or folder you want to inspect:
+After adding the printed install directory to `PATH` and reloading the shell, run it from the repo or folder you want to inspect:
 
 ```bash
 topic-anchor
@@ -90,6 +91,7 @@ The wrapper:
 `bb install-user`:
 
 - installs one public command: `topic-anchor`
+- is intended to be run from the `topic-anchor` repo root
 - prefers a symlink on Unix-like systems and falls back to a generated wrapper when needed
 - installs a Windows `.bat` shim on Windows
 - prints exact PATH instructions if the install directory is not already configured
@@ -207,6 +209,7 @@ Override the model or base URL if needed:
 clojure -M:test
 bb semantic-compare ./fixtures/smoke
 bb install-user
+# after PATH is updated from the installer output:
 topic-anchor ./fixtures/smoke
 clojure -M -m topic-anchor.core --help
 ```
