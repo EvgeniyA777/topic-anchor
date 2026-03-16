@@ -184,3 +184,4 @@ Reference ADR:
 - [adr/0001-anchor-based-topic-screening.md](./adr/0001-anchor-based-topic-screening.md)
 - [adr/0002-add-markdown-support.md](./adr/0002-add-markdown-support.md)
 - [adr/0003-replace-anchor-centric-screening-with-pairwise-clustering.md](./adr/0003-replace-anchor-centric-screening-with-pairwise-clustering.md)
+- [adr/0004-remove-makefile-launcher-in-favor-of-babashka.md](./adr/0004-remove-makefile-launcher-in-favor-of-babashka.md)
