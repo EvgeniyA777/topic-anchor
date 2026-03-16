@@ -2,7 +2,11 @@
   (:gen-class)
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
-            [clojure.tools.cli :refer [parse-opts]]))
+            [clojure.tools.cli :refer [parse-opts]]
+            [topic-anchor.fs :as fs]
+            [topic-anchor.html :as html]
+            [topic-anchor.ollama :as ollama]
+            [topic-anchor.scoring :as scoring]))
 
 (def cli-options
   [["-a" "--anchor PATH" "Path to one known-good in-topic HTML file"]
@@ -20,6 +24,8 @@
     :parse-fn #(Integer/parseInt %)]
    ["-h" "--help"]])
 
+(def required-option-keys [:anchor :dir :model])
+
 (defn usage [summary]
   (str/join
    \newline
@@ -30,23 +36,27 @@
     "Usage:"
     "  clojure -M -m topic-anchor.core --anchor ./good.html --dir ./batch --model nomic-embed-text"
     ""
-   "Options:"
-    summary]))
+    "Options:"
+    (or summary "")]))
 
-(def required-option-keys [:anchor :dir :model])
+(defn input-error [message]
+  {:ok? false :exit-code 2 :message message})
 
-(defn- blank-option? [value]
+(defn runtime-error [message]
+  {:ok? false :exit-code 3 :message message})
+
+(defn blank-option? [value]
   (or (nil? value)
       (and (string? value)
            (str/blank? value))))
 
-(defn- option-label [k]
+(defn option-label [k]
   (str "--" (name k)))
 
-(defn- existing-file? [path]
+(defn existing-file? [path]
   (.isFile (io/file path)))
 
-(defn- existing-directory? [path]
+(defn existing-directory? [path]
   (.isDirectory (io/file path)))
 
 (defn validation-errors [options]
@@ -59,11 +69,16 @@
     (when-let [anchor (:anchor options)]
       (when-not (blank-option? anchor)
         (when-not (existing-file? anchor)
-          (conj! errors (str "Anchor file does not exist: " anchor)))))
+          (conj! errors (str "Anchor file does not exist: " anchor)))
+        (when-not (fs/html-path? anchor)
+          (conj! errors (str "Anchor file must be .html or .htm: " anchor)))))
     (when-let [dir (:dir options)]
       (when-not (blank-option? dir)
         (when-not (existing-directory? dir)
           (conj! errors (str "Directory to scan does not exist: " dir)))))
+    (when (and (contains? options :top)
+               (not (pos-int? (:top options))))
+      (conj! errors "--top must be a positive integer"))
     (persistent! errors)))
 
 (defn validate-cli [{:keys [options errors]}]
@@ -75,21 +90,124 @@
                                        :message (str/join \newline (validation-errors options))}
     :else {:ok? true :options options}))
 
+(defn reason-code [reason]
+  ({:empty-text "EMPTY_TEXT"
+    :read-error "READ_ERROR"}
+   reason
+   "UNKNOWN"))
+
+(defn prepare-candidates [options]
+  (reduce
+   (fn [{:keys [comparable skipped]} path]
+     (let [relative-path (fs/relative-display-path (:dir options) path)
+           result (html/extract-text path)]
+       (if (:ok? result)
+         {:comparable (conj comparable {:path path
+                                        :relative-path relative-path
+                                        :text (:text result)})
+          :skipped skipped}
+         {:comparable comparable
+          :skipped (conj skipped {:relative-path relative-path
+                                  :reason (reason-code (:reason result))})})))
+   {:comparable [] :skipped []}
+   (fs/candidate-paths (:dir options)
+                       {:recursive (:recursive options)
+                        :include-hidden (:include-hidden options)
+                        :anchor (:anchor options)})))
+
+(defn embed-or-error [base-url model text]
+  (let [result (ollama/embed-text base-url model text)]
+    (if (:ok? result)
+      result
+      (runtime-error
+       (format "Ollama request failed (%s): %s"
+               (name (:reason result))
+               (or (:message result) "no details"))))))
+
+(defn classify-results [results]
+  (let [scores (mapv :score results)
+        policy (scoring/threshold-policy scores)]
+    (if policy
+      (mapv #(assoc % :status (scoring/classify-score (:score %) policy))
+            results)
+      (let [review-idx (scoring/review-index scores)]
+        (mapv (fn [idx result]
+                (assoc result :status (when (= idx review-idx) "REVIEW")))
+              (range)
+              results)))))
+
+(defn format-result-row [{:keys [status score relative-path]}]
+  (format "%s\t%.4f\t%s" (or status "-") (double score) relative-path))
+
+(defn format-skipped-row [{:keys [reason relative-path]}]
+  (str reason "\t" relative-path))
+
+(defn report-lines [classified skipped top]
+  (let [highlights (take top classified)]
+    (vec
+     (concat
+      ["Highlights" "STATUS\tSCORE\tPATH"]
+      (map format-result-row highlights)
+      ["" "Full ranking" "STATUS\tSCORE\tPATH"]
+      (map format-result-row classified)
+      (when (seq skipped)
+        ["" "Skipped" "REASON\tPATH"])
+      (map format-skipped-row skipped)))))
+
+(defn score-candidates [options anchor-text comparable]
+  (let [anchor-embedding (embed-or-error (:base-url options)
+                                         (:model options)
+                                         anchor-text)]
+    (if-not (:ok? anchor-embedding)
+      anchor-embedding
+      (loop [remaining comparable
+             acc []]
+        (if-let [candidate (first remaining)]
+          (let [embedding-result (embed-or-error (:base-url options)
+                                                 (:model options)
+                                                 (:text candidate))]
+            (if-not (:ok? embedding-result)
+              embedding-result
+              (recur (next remaining)
+                     (conj acc (assoc candidate
+                                      :score (double
+                                              (scoring/cosine-similarity
+                                               (:embedding anchor-embedding)
+                                               (:embedding embedding-result))))))))
+          {:ok? true
+           :results (vec (sort-by :score acc))})))))
+
+(defn run-command [options]
+  (let [anchor-result (html/extract-text (:anchor options))]
+    (cond
+      (not (:ok? anchor-result))
+      (input-error
+       (str "Anchor file could not be used: " (reason-code (:reason anchor-result))))
+
+      :else
+      (let [{:keys [comparable skipped]} (prepare-candidates options)]
+        (if (empty? comparable)
+          (input-error "No comparable HTML files were found after filtering and extraction")
+          (let [scored (score-candidates options (:text anchor-result) comparable)]
+            (if-not (:ok? scored)
+              scored
+              {:ok? true
+               :exit-code 0
+               :lines (report-lines (classify-results (:results scored))
+                                    skipped
+                                    (:top options))})))))))
+
 (defn -main [& args]
   (let [{:keys [options summary errors]} (parse-opts args cli-options)
-        {:keys [ok? exit-code message]} (validate-cli {:options options :errors errors})]
-    (if ok?
+        validation (validate-cli {:options options :errors errors})]
+    (if (:ok? validation)
+      (let [{:keys [ok? exit-code lines message]} (run-command (:options validation))]
+        (doseq [line (or lines [message])]
+          (println line))
+        (when-not ok?
+          (System/exit exit-code)))
       (do
-        (println "Bootstrap CLI check passed.")
-        (println "Anchor:" (:anchor options))
-        (println "Directory:" (:dir options))
-        (println "Model:" (:model options))
-        (println "Base URL:" (:base-url options))
-        (println "Recursive:" (:recursive options))
-        (println "Include hidden:" (:include-hidden options))
-        (println "Top results:" (:top options))
-        (println "Pipeline implementation is not wired yet.")
-        0)
-      (do
-        (println (if (= :help message) (usage summary) (or message (usage summary))))
-        (System/exit exit-code)))))
+        (println (if (= :help (:message validation))
+                   (usage summary)
+                   (or (:message validation) (usage summary))))
+        (System/exit (:exit-code validation))))))
